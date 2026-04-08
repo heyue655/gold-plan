@@ -61,12 +61,29 @@ router.get('/', auth, async (req, res) => {
   const year = parseInt(req.query.year, 10) || new Date().getFullYear();
   const month = parseInt(req.query.month, 10) || new Date().getMonth() + 1;
   const queryUserId = req.query.userId ? parseInt(req.query.userId, 10) : null;
+  const scope = req.query.scope; // 'all' 或不传
 
   if (month < 1 || month > 12) {
     return res.status(400).json({ message: '月份参数无效' });
   }
 
   try {
+    // 全部成员视图
+    if (scope === 'all') {
+      const familyIds = await getFamilyUserIds(req.user.id);
+      const allIds = [req.user.id, ...familyIds];
+      await generateMonthlyRepayments(req.user.id, year, month);
+      const rows = await prisma.monthlyRepayment.findMany({
+        where: { userId: { in: allIds }, year, month },
+        include: {
+          plan: { select: { name: true, dueDay: true } },
+          user: { select: { id: true, username: true } },
+        },
+        orderBy: { dueDate: 'asc' },
+      });
+      return res.json(rows.map((r) => ({ ...serializeRepayment(r), username: r.user?.username })));
+    }
+
     // 查看其他家庭成员的还款（只读，不自动生成）
     if (queryUserId && queryUserId !== req.user.id) {
       const familyIds = await getFamilyUserIds(req.user.id);

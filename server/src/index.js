@@ -11,6 +11,7 @@ const ledgerRouter = require('./routes/ledger');
 const dashboardRouter = require('./routes/dashboard');
 const familyRouter = require('./routes/family');
 const goalsRouter = require('./routes/goals');
+const aiRouter = require('./routes/ai');
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use('/api/ledger', ledgerRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/family', familyRouter);
 app.use('/api/goals', goalsRouter);
+app.use('/api/ai', aiRouter);
 
 // 健康检查
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));

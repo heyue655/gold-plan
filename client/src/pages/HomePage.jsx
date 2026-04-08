@@ -49,20 +49,21 @@ export default function HomePage() {
 
   // 家庭成员
   const [familyMembers, setFamilyMembers] = useState([])
-  const [selectedUserId, setSelectedUserId] = useState(null) // null = 自己
+  const [scope, setScope] = useState('mine') // 'all' | 'mine' | String(memberId)
 
   useEffect(() => {
     api.get('/family').then(({ data }) => setFamilyMembers(data.members)).catch(() => {})
   }, [])
 
-  const isReadOnly = selectedUserId !== null
+  const isReadOnly = scope !== 'mine'
 
-  const fetchRepayments = useCallback(async (year, month, userId) => {
+  const fetchRepayments = useCallback(async (year, month, sc) => {
     setLoading(true)
     setError('')
     try {
       const params = { year, month }
-      if (userId) params.userId = userId
+      if (sc === 'all') params.scope = 'all'
+      else if (sc !== 'mine') params.userId = parseInt(sc, 10)
       const { data } = await api.get('/repayments', { params })
       setRepayments(data)
     } catch (err) {
@@ -73,8 +74,8 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
-    fetchRepayments(current.year, current.month, selectedUserId)
-  }, [current, selectedUserId, fetchRepayments])
+    fetchRepayments(current.year, current.month, scope)
+  }, [current, scope, fetchRepayments])
 
   const handlePrevMonth = () => {
     setCurrent((prev) => {
@@ -100,7 +101,7 @@ export default function HomePage() {
   }
 
   const handlePlanAdded = () => {
-    fetchRepayments(current.year, current.month, selectedUserId)
+    fetchRepayments(current.year, current.month, scope)
   }
 
   const handleEdit = (repayment) => {
@@ -109,7 +110,7 @@ export default function HomePage() {
 
   const handleEditSuccess = () => {
     setEditTarget(null)
-    fetchRepayments(current.year, current.month, selectedUserId)
+    fetchRepayments(current.year, current.month, scope)
   }
 
   const handleDeleteConfirm = async () => {
@@ -118,7 +119,7 @@ export default function HomePage() {
     try {
       await api.delete(`/plans/${deleteTarget.plan_id}`)
       setDeleteTarget(null)
-      fetchRepayments(current.year, current.month, selectedUserId)
+      fetchRepayments(current.year, current.month, scope)
     } catch (err) {
       setError(err.response?.data?.message || '删除失败，请稍后重试')
       setDeleteTarget(null)
@@ -160,29 +161,33 @@ export default function HomePage() {
 
         {/* 成员选择器 — 有绑定成员时显示 */}
         {familyMembers.length > 0 && (
-          <Box sx={{ px: 2, pb: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Chip
-              label={user?.username ?? '我'}
-              size="small"
-              onClick={() => setSelectedUserId(null)}
-              sx={{
-                bgcolor: selectedUserId === null ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.25)',
-                color: selectedUserId === null ? 'primary.main' : '#fff',
-                fontWeight: selectedUserId === null ? 700 : 400,
-                '&:hover': { bgcolor: selectedUserId === null ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.35)' },
-              }}
-            />
-            {familyMembers.map((m) => (
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 0.75,
+              px: 2,
+              pb: 1.25,
+              overflowX: 'auto',
+              '&::-webkit-scrollbar': { display: 'none' },
+            }}
+          >
+            {[
+              { key: 'all', label: '全部' },
+              { key: 'mine', label: '仅看我的' },
+              ...familyMembers.map((m) => ({ key: String(m.id), label: m.username + '的' })),
+            ].map((tab) => (
               <Chip
-                key={m.id}
-                label={m.username}
+                key={tab.key}
+                label={tab.label}
                 size="small"
-                onClick={() => setSelectedUserId(m.id)}
+                onClick={() => setScope(tab.key)}
                 sx={{
-                  bgcolor: selectedUserId === m.id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.25)',
-                  color: selectedUserId === m.id ? 'primary.main' : '#fff',
-                  fontWeight: selectedUserId === m.id ? 700 : 400,
-                  '&:hover': { bgcolor: selectedUserId === m.id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.35)' },
+                  flexShrink: 0,
+                  bgcolor: scope === tab.key ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.2)',
+                  color: scope === tab.key ? 'primary.main' : '#fff',
+                  fontWeight: scope === tab.key ? 700 : 400,
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.7)' },
+                  border: 'none',
                 }}
               />
             ))}
@@ -230,7 +235,7 @@ export default function HomePage() {
         {!loading && !error && repayments.length === 0 && (
           <Box sx={{ textAlign: 'center', mt: 8, color: 'text.secondary' }}>
             <Typography variant="h6" gutterBottom>
-              {isReadOnly ? '该成员本月暂无还款计划' : '本月暂无还款计划'}
+              {scope === 'all' ? '全部成员本月均无还款计划' : scope !== 'mine' ? '该成员本月暂无还款计划' : '本月暂无还款计划'}
             </Typography>
             {!isReadOnly && (
               <Typography variant="body2">
@@ -274,6 +279,7 @@ export default function HomePage() {
                 onEdit={handleEdit}
                 onDelete={setDeleteTarget}
                 readOnly={isReadOnly}
+                ownerName={scope === 'all' && r.user_id !== user?.id ? r.username : undefined}
               />
             ))}
           </Box>
@@ -296,6 +302,7 @@ export default function HomePage() {
                 onEdit={handleEdit}
                 onDelete={setDeleteTarget}
                 readOnly={isReadOnly}
+                ownerName={scope === 'all' && r.user_id !== user?.id ? r.username : undefined}
               />
             ))}
           </Box>

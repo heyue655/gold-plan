@@ -32,7 +32,7 @@ function getDaysUntilDue(dueDateStr, today) {
   return diff
 }
 
-export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDelete, readOnly }) {
+export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDelete, readOnly, ownerName }) {
   const [anchorEl, setAnchorEl] = useState(null)
   const menuOpen = Boolean(anchorEl)
 
@@ -151,6 +151,11 @@ export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDe
               </>
             )}
           </Typography>
+          {ownerName && (
+            <Typography variant="caption" color="primary.main" fontWeight={600}>
+              {ownerName}
+            </Typography>
+          )}
         </Box>
 
         <Typography

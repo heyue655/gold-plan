@@ -30,6 +30,10 @@ import {
   Savings,
   Edit,
   Delete,
+  AutoAwesome,
+  TrendingUp,
+  TrendingDown,
+  TrendingFlat,
 } from '@mui/icons-material'
 import BindingDialog from '../components/BindingDialog'
 import api from '../api/axios'
@@ -57,6 +61,25 @@ export default function MyPage() {
   const [familyNote, setFamilyNote] = useState('')
   const [goalSaving, setGoalSaving] = useState(false)
   const [goalError, setGoalError] = useState('')
+
+  // AI 分析状态
+  const [aiAnalysis, setAiAnalysis] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState('')
+  const [aiGeneratedAt, setAiGeneratedAt] = useState('')
+  const [aiPending, setAiPending] = useState(false) // 已提交分析请求，等待结果
+  const [aiComparison, setAiComparison] = useState(null)
+
+  // 页面加载时拉取最近一次分析记录
+  useEffect(() => {
+    api.get('/ai/last').then(({ data }) => {
+      if (data.record) {
+        setAiAnalysis(data.record.content)
+        setAiGeneratedAt(data.record.createdAt)
+      }
+      if (data.comparison) setAiComparison(data.comparison)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     api.get('/family').then(({ data }) => {
@@ -153,6 +176,37 @@ export default function MyPage() {
     goals?.family && familyLiujin !== null
       ? Math.min((familyLiujin / parseFloat(goals.family.amount)) * 100, 100)
       : null
+
+  const handleAiAnalyze = async () => {
+    setAiLoading(true)
+    setAiError('')
+    try {
+      await api.post('/ai/analyze')
+      setAiPending(true)
+    } catch (err) {
+      setAiError(err.response?.data?.message || 'AI 分析失败，请稍后重试')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const handleAiRefresh = async () => {
+    setAiLoading(true)
+    setAiError('')
+    try {
+      const { data } = await api.get('/ai/last')
+      if (data.record) {
+        setAiAnalysis(data.record.content)
+        setAiGeneratedAt(data.record.createdAt)
+        setAiComparison(data.comparison || null)
+        setAiPending(false)
+      }
+    } catch {
+      // 静默失败
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
   return (
     <Box>
@@ -459,6 +513,131 @@ export default function MyPage() {
                       </Typography>
                     )}
                   </>
+                )}
+              </CardContent>
+            </Card>
+            {/* AI 财务分析 */}
+            <Card sx={{ mb: 2 }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <AutoAwesome sx={{ color: 'warning.main', mr: 1, fontSize: 20 }} />
+                  <Typography variant="subtitle1" fontWeight={700} sx={{ flex: 1 }}>
+                    AI 财务分析
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant={aiAnalysis && !aiPending ? 'outlined' : 'contained'}
+                    onClick={handleAiAnalyze}
+                    disabled={aiLoading}
+                    startIcon={aiLoading ? <CircularProgress size={13} color="inherit" /> : <AutoAwesome />}
+                    sx={{ minWidth: 96 }}
+                  >
+                    {aiLoading ? '提交中…' : aiAnalysis ? '重新分析' : '开始分析'}
+                  </Button>
+                </Box>
+                <Divider sx={{ mb: 1.5 }} />
+
+                {/* 与上次分析的对比卡 */}
+                {aiComparison && (() => {
+                  const c = aiComparison
+                  const isImproved = c.trend === 'improved'
+                  const isWorsened = c.trend === 'worsened'
+                  const trendColor = isImproved ? 'success.main' : isWorsened ? 'error.main' : 'text.secondary'
+                  const trendBg = isImproved ? '#e8f5e9' : isWorsened ? '#ffebee' : '#f5f5f5'
+                  const TrendIcon = isImproved ? TrendingUp : isWorsened ? TrendingDown : TrendingFlat
+                  const trendLabel = isImproved ? '财务状况好转 ↑' : isWorsened ? '财务状况恶化 ↓' : '财务状况持平'
+                  const fmt = (v) => (v >= 0 ? '+' : '') + formatAmount(v)
+                  return (
+                    <Box sx={{ mb: 1.5, p: 1.5, bgcolor: trendBg, borderRadius: 2, border: '1px solid', borderColor: isImproved ? 'success.200' : isWorsened ? 'error.200' : 'grey.300' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
+                        <TrendIcon sx={{ color: trendColor, fontSize: 18 }} />
+                        <Typography variant="body2" fontWeight={700} color={trendColor}>{trendLabel}</Typography>
+                        <Typography variant="caption" color="text.disabled" sx={{ ml: 'auto' }}>
+                          对比 {new Date(c.prevCreatedAt).toLocaleDateString('zh-CN')}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5 }}>
+                        {[
+                          { label: '净留金', diff: c.netBalanceDiff, positive: c.netBalanceDiff > 0 },
+                          { label: '总收入', diff: c.totalIncomeDiff, positive: c.totalIncomeDiff > 0 },
+                          { label: '日常支出', diff: c.totalExpenseDiff, positive: c.totalExpenseDiff < 0 },
+                          { label: '信用卡还款', diff: c.repaymentDiff, positive: c.repaymentDiff < 0 },
+                        ].map(({ label, diff, positive }) => (
+                          <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="caption" color="text.secondary">{label}</Typography>
+                            <Typography variant="caption" fontWeight={700}
+                              color={diff === 0 ? 'text.secondary' : positive ? 'success.main' : 'error.main'}>
+                              {diff === 0 ? '—' : `¥${fmt(diff)}`}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  )
+                })()}
+
+                {aiError && <Alert severity="error" sx={{ mb: 1 }}>{aiError}</Alert>}
+
+                {/* 分析中提示 + 刷新按钮 */}
+                {aiPending && (
+                  <Alert
+                    severity="info"
+                    sx={{ mb: 1.5 }}
+                    action={
+                      <Button
+                        size="small"
+                        color="info"
+                        onClick={handleAiRefresh}
+                        disabled={aiLoading}
+                        startIcon={aiLoading ? <CircularProgress size={12} color="inherit" /> : null}
+                      >
+                        刷新结果
+                      </Button>
+                    }
+                  >
+                    分析中，请稍候查看分析结果
+                  </Alert>
+                )}
+                {!aiAnalysis && !aiLoading && !aiError && (
+                  <Typography variant="body2" color="text.disabled" sx={{ textAlign: 'center', py: 2 }}>
+                    点击「开始分析」，AI 将根据您近12个月的收支数据生成个性化建议
+                  </Typography>
+                )}
+                {aiLoading && !aiAnalysis && (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                    <CircularProgress size={32} />
+                  </Box>
+                )}
+                {aiAnalysis && (
+                  <Box>
+                    {aiAnalysis.split('\n').map((line, i) => {
+                      if (line.startsWith('## ') || line.startsWith('# ')) {
+                        const text = line.replace(/^#+\s*/, '')
+                        return (
+                          <Typography key={i} variant="body2" fontWeight={700} sx={{ mt: 1.5, mb: 0.5, color: 'primary.main' }}>
+                            {text.replace(/\*\*/g, '')}
+                          </Typography>
+                        )
+                      }
+                      if (line.trim() === '') return <Box key={i} sx={{ height: 6 }} />
+                      // 渲染行内加粗 **text**
+                      const parts = line.split(/(\*\*.*?\*\*)/g)
+                      return (
+                        <Typography key={i} variant="body2" sx={{ lineHeight: 1.9 }}>
+                          {parts.map((part, j) =>
+                            /^\*\*(.*)\*\*$/.test(part)
+                              ? <strong key={j}>{part.slice(2, -2)}</strong>
+                              : part
+                          )}
+                        </Typography>
+                      )
+                    })}
+                    {aiGeneratedAt && (
+                      <Typography variant="caption" color="text.disabled" sx={{ mt: 1.5, display: 'block' }}>
+                        生成于 {new Date(aiGeneratedAt).toLocaleString('zh-CN')}
+                      </Typography>
+                    )}
+                  </Box>
                 )}
               </CardContent>
             </Card>

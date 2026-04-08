@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 10000,
+  timeout: 10000, // 普通接口 10s；AI 分析接口用原生 fetch + SSE，不受此限制
 })
 
 api.interceptors.request.use((config) => {

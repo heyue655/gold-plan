@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import {
   Box,
   AppBar,
@@ -83,45 +83,47 @@ export default function FinancePage() {
                   <Box
                     sx={{
                       flex: 1,
-                      textAlign: 'center',
-                      p: 2,
+                      p: 1,
                       bgcolor: 'success.50',
                       borderRadius: 2,
                       border: '1px solid',
                       borderColor: 'success.200',
                     }}
                   >
-                    <CheckCircle sx={{ color: 'success.main', mb: 0.5 }} />
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      已还
-                    </Typography>
-                    <Typography variant="h6" fontWeight={700} color="success.main">
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <CheckCircle sx={{ color: 'success.main', fontSize: 16 }} />
+                        <Typography variant="caption" color="text.secondary">已还</Typography>
+                      </Box>
+                      <Typography variant="caption" color="text.disabled">
+                        {stats.current_month.paid_count}/{stats.current_month.total_count}
+                      </Typography>
+                    </Box>
+                    <Typography variant="subtitle1" fontWeight={700} color="success.main" lineHeight={1.2}>
                       ¥{formatAmount(stats.current_month.paid)}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {stats.current_month.paid_count}/{stats.current_month.total_count} 项
                     </Typography>
                   </Box>
                   <Box
                     sx={{
                       flex: 1,
-                      textAlign: 'center',
-                      p: 2,
+                      p: 1,
                       bgcolor: 'error.50',
                       borderRadius: 2,
                       border: '1px solid',
                       borderColor: 'error.200',
                     }}
                   >
-                    <RadioButtonUnchecked sx={{ color: 'error.main', mb: 0.5 }} />
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      待还
-                    </Typography>
-                    <Typography variant="h6" fontWeight={700} color="error.main">
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <RadioButtonUnchecked sx={{ color: 'error.main', fontSize: 16 }} />
+                        <Typography variant="caption" color="text.secondary">待还</Typography>
+                      </Box>
+                      <Typography variant="caption" color="text.disabled">
+                        {stats.current_month.total_count - stats.current_month.paid_count}/{stats.current_month.total_count}
+                      </Typography>
+                    </Box>
+                    <Typography variant="subtitle1" fontWeight={700} color="error.main" lineHeight={1.2}>
                       ¥{formatAmount(stats.current_month.unpaid)}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {stats.current_month.total_count - stats.current_month.paid_count} 项
                     </Typography>
                   </Box>
                 </Box>

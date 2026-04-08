@@ -17,6 +17,7 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Fab,
 } from '@mui/material'
 import { ChevronLeft, ChevronRight, Add, Delete } from '@mui/icons-material'
 import api from '../api/axios'
@@ -150,9 +151,6 @@ export default function DashboardPage() {
           <IconButton color="inherit" onClick={handleNext} size="large" aria-label="下个月">
             <ChevronRight />
           </IconButton>
-          <IconButton color="inherit" onClick={() => setAddOpen(true)} aria-label="记一笔">
-            <Add />
-          </IconButton>
         </Toolbar>
 
         {/* 范围切换 chips （仅有家庭成员时显示） */}
@@ -269,7 +267,7 @@ export default function DashboardPage() {
         {!loading && !error && entries.length === 0 && (
           <Box sx={{ textAlign: 'center', mt: 8, color: 'text.secondary' }}>
             <Typography variant="h6" gutterBottom>本月暂无记账记录</Typography>
-            <Typography variant="body2">点击右上角 + 开始记账</Typography>
+            <Typography variant="body2">点击右下角 + 开始记账</Typography>
           </Box>
         )}
 
@@ -382,6 +380,15 @@ export default function DashboardPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Fab
+        color="primary"
+        aria-label="记一笔"
+        onClick={() => setAddOpen(true)}
+        sx={{ position: 'fixed', bottom: 76, right: 16, zIndex: 1200 }}
+      >
+        <Add />
+      </Fab>
     </Box>
   )
 }

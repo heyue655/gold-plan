@@ -110,3 +110,18 @@ model SavingsGoal {
   @@index([userId])
   @@map("savings_goals")
 }
+
+// AI 分析记录：familyKey 为家庭组 key（成员 id 排序后拼接），个人账号 familyKey = "u{userId}"
+model AiAnalysisRecord {
+  id          Int      @id @default(autoincrement())
+  familyKey   String   @db.VarChar(200) @map("family_key") // e.g. "u1" or "u1_u3_u7"
+  content     String   @db.Text                             // AI 分析全文
+  netBalance  Decimal  @db.Decimal(12, 2) @map("net_balance") // 本次净留金（用于对比）
+  totalIncome Decimal  @db.Decimal(12, 2) @map("total_income")
+  totalExpense Decimal @db.Decimal(12, 2) @map("total_expense")
+  totalRepayment Decimal @db.Decimal(12, 2) @map("total_repayment")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([familyKey, createdAt])
+  @@map("ai_analysis_records")
+}
