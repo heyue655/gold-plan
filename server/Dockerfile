@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM docker.das-security.cn/node:22-alpine
 
 WORKDIR /app
 
