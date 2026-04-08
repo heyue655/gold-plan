@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique @db.VarChar(50)
+  email        String   @unique @db.VarChar(100)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  plans         RepaymentPlan[]
+  repayments    MonthlyRepayment[]
+  ledgerEntries LedgerEntry[]
+
+  sentBindings     FamilyBinding[] @relation("BindingRequester")
+  receivedBindings FamilyBinding[] @relation("BindingReceiver")
+  savingsGoals     SavingsGoal[]
+
+  @@map("users")
+}
+
+model FamilyBinding {
+  id          Int      @id @default(autoincrement())
+  requesterId Int      @map("requester_id")
+  receiverId  Int      @map("receiver_id")
+  status      String   @default("PENDING") @db.VarChar(10) // PENDING | ACCEPTED | REJECTED
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  requester User @relation("BindingRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("BindingReceiver",  fields: [receiverId],  references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+  @@index([receiverId, status])
+  @@map("family_bindings")
+}
+
+model LedgerEntry {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  type      String    @db.VarChar(10)  // INCOME or EXPENSE
+  amount    Decimal   @db.Decimal(10, 2)
+  category  String    @db.VarChar(50)
+  note      String?   @db.VarChar(200)
+  date      DateTime  @db.Date
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@map("ledger_entries")
+}
+
+model RepaymentPlan {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String   @db.VarChar(100)
+  amount    Decimal  @db.Decimal(10, 2)
+  dueDay    Int      @map("due_day") @db.TinyInt
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repayments MonthlyRepayment[]
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@map("repayment_plans")
+}
+
+model MonthlyRepayment {
+  id        Int       @id @default(autoincrement())
+  planId    Int       @map("plan_id")
+  userId    Int       @map("user_id")
+  year      Int       @db.SmallInt
+  month     Int       @db.TinyInt
+  amount    Decimal   @db.Decimal(10, 2)
+  dueDate   DateTime  @map("due_date") @db.Date
+  isPaid    Boolean   @default(false) @map("is_paid")
+  paidAt    DateTime? @map("paid_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  plan RepaymentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, year, month])
+  @@index([userId, year, month])
+  @@index([userId, isPaid])
+  @@map("monthly_repayments")
+}
+
+model SavingsGoal {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  scope     String   @db.VarChar(10)  // PERSONAL | FAMILY
+  amount    Decimal  @db.Decimal(12, 2)
+  note      String?  @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope])
+  @@index([userId])
+  @@map("savings_goals")
+}

@@ -1,0 +1,102 @@
+const express = require('express');
+const prisma = require('../db/prisma');
+const auth = require('../middleware/auth');
+
+const router = express.Router();
+
+const toNum = (v) => parseFloat((v || 0).toString());
+
+// 获取统计数据
+router.get('/', auth, async (req, res) => {
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    // 并行查询：累计 + 本月已还 + 本月未还 + 本月总数 + 本月已还数 + 历史分组
+    const [
+      totalAgg,
+      paidAgg,
+      unpaidAgg,
+      totalCount,
+      paidCount,
+      allGroups,
+      paidGroups,
+      ledgerIncomeAgg,
+      ledgerExpenseAgg,
+    ] = await Promise.all([
+      prisma.monthlyRepayment.aggregate({
+        where: { userId: req.user.id, isPaid: true },
+        _sum: { amount: true },
+      }),
+      prisma.monthlyRepayment.aggregate({
+        where: { userId: req.user.id, year, month, isPaid: true },
+        _sum: { amount: true },
+      }),
+      prisma.monthlyRepayment.aggregate({
+        where: { userId: req.user.id, year, month, isPaid: false },
+        _sum: { amount: true },
+      }),
+      prisma.monthlyRepayment.count({ where: { userId: req.user.id, year, month } }),
+      prisma.monthlyRepayment.count({ where: { userId: req.user.id, year, month, isPaid: true } }),
+      // 近12个月总金额分组
+      prisma.monthlyRepayment.groupBy({
+        by: ['year', 'month'],
+        where: { userId: req.user.id },
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        take: 12,
+        _sum: { amount: true },
+      }),
+      // 近12个月已还金额分组
+      prisma.monthlyRepayment.groupBy({
+        by: ['year', 'month'],
+        where: { userId: req.user.id, isPaid: true },
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+        take: 12,
+        _sum: { amount: true },
+      }),
+      prisma.ledgerEntry.aggregate({
+        where: { userId: req.user.id, type: 'INCOME' },
+        _sum: { amount: true },
+      }),
+      prisma.ledgerEntry.aggregate({
+        where: { userId: req.user.id, type: 'EXPENSE' },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    // 构建已还金额 Map
+    const paidMap = {};
+    for (const g of paidGroups) {
+      paidMap[`${g.year}-${g.month}`] = toNum(g._sum.amount);
+    }
+
+    const monthly_history = allGroups
+      .reverse()
+      .map((g) => ({
+        label: `${g.year}/${String(g.month).padStart(2, '0')}`,
+        paid_amount: paidMap[`${g.year}-${g.month}`] ?? 0,
+        total_amount: toNum(g._sum.amount),
+      }));
+
+    return res.json({
+      total_paid: toNum(totalAgg._sum.amount),
+      total_income: toNum(ledgerIncomeAgg._sum.amount),
+      total_ledger_expense: toNum(ledgerExpenseAgg._sum.amount),
+      current_month: {
+        year,
+        month,
+        paid: toNum(paidAgg._sum.amount),
+        unpaid: toNum(unpaidAgg._sum.amount),
+        total_count: totalCount,
+        paid_count: paidCount,
+      },
+      monthly_history,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+module.exports = router;
