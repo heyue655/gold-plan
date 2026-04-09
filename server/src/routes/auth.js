@@ -147,8 +147,13 @@ router.get('/sso-callback', async (req, res) => {
       return res.redirect(`${CLIENT}/sso-login?token=${token}&user=${userJson}`);
     }
 
-    // 没找到本地用户 → 跳转到绑定页面，让用户输入本地账号
-    return res.redirect(`${CLIENT}/sso-bind?sso_user_id=${ssoUser.sso_user_id}`);
+    // 没找到本地用户 → 跳转到绑定页面，附带 SSO 用户信息
+    const ssoInfo = encodeURIComponent(JSON.stringify({
+      sso_user_id: ssoUser.sso_user_id,
+      nickname: ssoUser.nickname || ssoUser.username || '',
+      email: ssoUser.email || '',
+    }));
+    return res.redirect(`${CLIENT}/sso-bind?sso_info=${ssoInfo}`);
   } catch (e) {
     console.error('SSO callback error:', e);
     return res.redirect(`${CLIENT}/login?error=${encodeURIComponent(e.message)}`);
@@ -198,6 +203,73 @@ router.post('/sso-bind', async (req, res) => {
 
     return res.json({
       message: '绑定成功',
+      token,
+      user: { id: localUser.id, username: localUser.username, email: localUser.email },
+    });
+  } catch (err) {
+    console.error('SSO bind error:', err);
+    return res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// ─── SSO 快速登录（用盒子账号自动创建本地账号） ───
+router.post('/sso-quick-login', async (req, res) => {
+  const SSO_URL = process.env.SSO_CENTER_URL || 'http://localhost:3002';
+  const APP_KEY = process.env.SSO_APP_KEY || 'credit-card';
+  const APP_SECRET = process.env.SSO_APP_SECRET || '';
+
+  try {
+    const { sso_user_id, nickname, email } = req.body;
+    if (!sso_user_id) {
+      return res.status(400).json({ message: '参数不完整' });
+    }
+
+    // 防止重复创建
+    let localUser = await prisma.user.findFirst({ where: { ssoUserId: parseInt(sso_user_id) } });
+    if (!localUser && email) {
+      localUser = await prisma.user.findUnique({ where: { email } });
+    }
+
+    if (!localUser) {
+      // 生成随机密码
+      const crypto = require('crypto');
+      const randomPwd = crypto.randomBytes(16).toString('hex');
+      const passwordHash = await bcrypt.hash(randomPwd, 12);
+
+      // 使用 SSO 用户信息创建本地账号
+      const username = nickname || `user_${sso_user_id}`;
+      const userEmail = email || `sso_${sso_user_id}@heyue.local`;
+
+      localUser = await prisma.user.create({
+        data: {
+          username,
+          email: userEmail,
+          passwordHash,
+          ssoUserId: parseInt(sso_user_id),
+        },
+      });
+    }
+
+    // 确保 ssoUserId 已写入
+    if (!localUser.ssoUserId) {
+      await prisma.user.update({ where: { id: localUser.id }, data: { ssoUserId: parseInt(sso_user_id) } });
+    }
+
+    // 通知 SSO 中心
+    fetch(`${SSO_URL}/sso/bind-notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_key: APP_KEY, app_secret: APP_SECRET, sso_user_id: parseInt(sso_user_id), local_user_id: String(localUser.id) }),
+    }).catch(() => {});
+
+    const token = jwt.sign(
+      { id: localUser.id, username: localUser.username, email: localUser.email },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
+    );
+
+    return res.json({
+      message: '登录成功',
       token,
       user: { id: localUser.id, username: localUser.username, email: localUser.email },
     });
