@@ -12,6 +12,7 @@ model User {
   username     String   @unique @db.VarChar(50)
   email        String   @unique @db.VarChar(100)
   passwordHash String   @map("password_hash") @db.VarChar(255)
+  ssoUserId    Int?     @map("sso_user_id")
   createdAt    DateTime @default(now()) @map("created_at")
 
   plans         RepaymentPlan[]

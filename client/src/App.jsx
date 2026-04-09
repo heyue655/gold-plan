@@ -8,6 +8,8 @@ import MyPage from './pages/MyPage'
 import LedgerPage from './pages/LedgerPage'
 import FinancePage from './pages/FinancePage'
 import Layout from './components/Layout'
+import SsoLogin from './pages/SsoLogin'
+import SsoBind from './pages/SsoBind'
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
@@ -19,6 +21,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/sso-login" element={<SsoLogin />} />
+      <Route path="/sso-bind" element={<SsoBind />} />
       <Route
         path="/"
         element={
