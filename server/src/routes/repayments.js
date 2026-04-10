@@ -57,7 +57,17 @@ async function generateMonthlyRepayments(userId, year, month) {
 
   if (eligible.length === 0) return;
 
-  const data = eligible.map((p) => ({
+  // 查询该月已有记录的 planId，避免重复 INSERT 浪费自增 ID
+  const existing = await prisma.monthlyRepayment.findMany({
+    where: { userId, year, month },
+    select: { planId: true },
+  });
+  const existingPlanIds = new Set(existing.map((r) => r.planId));
+
+  const toCreate = eligible.filter((p) => !existingPlanIds.has(p.id));
+  if (toCreate.length === 0) return;
+
+  const data = toCreate.map((p) => ({
     planId: p.id,
     userId,
     year,
@@ -66,7 +76,7 @@ async function generateMonthlyRepayments(userId, year, month) {
     dueDate: getDueDateObj(year, month, p.dueDay),
   }));
 
-  await prisma.monthlyRepayment.createMany({ data, skipDuplicates: true });
+  await prisma.monthlyRepayment.createMany({ data });
 }
 
 // 获取指定月份的还款实例（自动生成）
@@ -81,11 +91,18 @@ router.get('/', auth, async (req, res) => {
   }
 
   try {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1;
+    const isCurrentMonth = year === curYear && month === curMonth;
+
     // 全部成员视图
     if (scope === 'all') {
       const familyIds = await getFamilyUserIds(req.user.id);
       const allIds = [req.user.id, ...familyIds];
-      await generateMonthlyRepayments(req.user.id, year, month);
+      if (isCurrentMonth) {
+        await generateMonthlyRepayments(req.user.id, curYear, curMonth);
+      }
       const rows = await prisma.monthlyRepayment.findMany({
         where: { userId: { in: allIds }, year, month, isDeleted: false, plan: { isActive: true } },
         include: {
@@ -111,8 +128,10 @@ router.get('/', auth, async (req, res) => {
       return res.json(rows.map(serializeRepayment));
     }
 
-    // 查看自己的还款（自动生成本月记录）
-    await generateMonthlyRepayments(req.user.id, year, month);
+    // 查看自己的还款（仅当月自动生成记录）
+    if (isCurrentMonth) {
+      await generateMonthlyRepayments(req.user.id, curYear, curMonth);
+    }
 
     const rows = await prisma.monthlyRepayment.findMany({
       where: { userId: req.user.id, year, month, isDeleted: false, plan: { isActive: true } },
