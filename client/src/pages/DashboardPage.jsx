@@ -62,7 +62,7 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const now = new Date()
   const [current, setCurrent] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
-  const [scope, setScope] = useState('all')
+  const [scope, setScope] = useState('mine')
   const [familyMembers, setFamilyMembers] = useState([])
   const [summary, setSummary] = useState(null)
   const [entries, setEntries] = useState([])
@@ -74,7 +74,10 @@ export default function DashboardPage() {
 
   // 加载家庭成员列表
   useEffect(() => {
-    api.get('/family').then(({ data }) => setFamilyMembers(data.members)).catch(() => {})
+    api.get('/family').then(({ data }) => {
+      setFamilyMembers(data.members)
+      if (data.members.length > 0) setScope('all')
+    }).catch(() => {})
   }, [])
 
   const fetchAll = useCallback(async (year, month, sc) => {
@@ -206,8 +209,8 @@ export default function DashboardPage() {
                 borderColor="success.200"
               />
               <SummaryCard
-                label="支出(含还款)"
-                value={summary.total_expense}
+                label="已确认支出"
+                value={summary.paid_expense ?? summary.total_expense}
                 color="error.main"
                 borderColor="error.200"
               />

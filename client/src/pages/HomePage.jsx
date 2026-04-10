@@ -52,10 +52,15 @@ export default function HomePage() {
   const [scope, setScope] = useState('mine') // 'all' | 'mine' | String(memberId)
 
   useEffect(() => {
-    api.get('/family').then(({ data }) => setFamilyMembers(data.members)).catch(() => {})
+    api.get('/family').then(({ data }) => {
+      setFamilyMembers(data.members)
+      if (data.members.length > 0) setScope('all')
+    }).catch(() => {})
   }, [])
 
+  // 非本人视角下：仅允许标记还款，禁止增删改计划
   const isReadOnly = scope !== 'mine'
+  const canToggle = true // 家庭成员也可以协助标记还款
 
   const fetchRepayments = useCallback(async (year, month, sc) => {
     setLoading(true)
@@ -113,11 +118,19 @@ export default function HomePage() {
     fetchRepayments(current.year, current.month, scope)
   }
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (mode) => {
     if (!deleteTarget) return
     setDeleteLoading(true)
     try {
-      await api.delete(`/plans/${deleteTarget.plan_id}`)
+      if (mode === 'month') {
+        // 仅删除本月还款记录
+        await api.delete(`/repayments/${deleteTarget.id}`)
+      } else {
+        // 删除整个还款计划 + 当月及未来记录
+        await api.delete(`/plans/${deleteTarget.plan_id}`, {
+          params: { year: current.year, month: current.month },
+        })
+      }
       setDeleteTarget(null)
       fetchRepayments(current.year, current.month, scope)
     } catch (err) {
@@ -275,10 +288,11 @@ export default function HomePage() {
                 key={r.id}
                 repayment={r}
                 today={today}
-                onToggle={handleToggle}
-                onEdit={handleEdit}
-                onDelete={setDeleteTarget}
+                onToggle={canToggle ? handleToggle : undefined}
+                onEdit={!isReadOnly ? handleEdit : undefined}
+                onDelete={!isReadOnly ? setDeleteTarget : undefined}
                 readOnly={isReadOnly}
+                toggleOnly={isReadOnly && canToggle}
                 ownerName={scope === 'all' && r.user_id !== user?.id ? r.username : undefined}
               />
             ))}
@@ -298,10 +312,11 @@ export default function HomePage() {
                 key={r.id}
                 repayment={r}
                 today={today}
-                onToggle={handleToggle}
-                onEdit={handleEdit}
-                onDelete={setDeleteTarget}
+                onToggle={canToggle ? handleToggle : undefined}
+                onEdit={!isReadOnly ? handleEdit : undefined}
+                onDelete={!isReadOnly ? setDeleteTarget : undefined}
                 readOnly={isReadOnly}
+                toggleOnly={isReadOnly && canToggle}
                 ownerName={scope === 'all' && r.user_id !== user?.id ? r.username : undefined}
               />
             ))}
@@ -328,24 +343,33 @@ export default function HomePage() {
             maxWidth="xs"
             fullWidth
           >
-            <DialogTitle sx={{ fontWeight: 700 }}>确认删除</DialogTitle>
+            <DialogTitle sx={{ fontWeight: 700 }}>删除「{deleteTarget?.plan_name}」</DialogTitle>
             <DialogContent>
               <DialogContentText>
-                删除后「{deleteTarget?.plan_name}」将不再生成新的每月还款记录，历史记录不受影响。确认删除吗？
+                请选择删除方式：
               </DialogContentText>
             </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-              <Button onClick={() => setDeleteTarget(null)} disabled={deleteLoading} color="inherit">
-                取消
+            <DialogActions sx={{ px: 3, pb: 2, gap: 1, flexDirection: 'column', alignItems: 'stretch' }}>
+              <Button
+                onClick={() => handleDeleteConfirm('month')}
+                disabled={deleteLoading}
+                variant="outlined"
+                color="warning"
+                fullWidth
+              >
+                {deleteLoading ? <CircularProgress size={20} color="inherit" /> : '仅删除本月记录'}
               </Button>
               <Button
-                onClick={handleDeleteConfirm}
+                onClick={() => handleDeleteConfirm('plan')}
                 disabled={deleteLoading}
                 variant="contained"
                 color="error"
-                sx={{ minWidth: 80 }}
+                fullWidth
               >
-                {deleteLoading ? <CircularProgress size={20} color="inherit" /> : '确认删除'}
+                {deleteLoading ? <CircularProgress size={20} color="inherit" /> : '删除整个还款计划'}
+              </Button>
+              <Button onClick={() => setDeleteTarget(null)} disabled={deleteLoading} color="inherit" fullWidth>
+                取消
               </Button>
             </DialogActions>
           </Dialog>

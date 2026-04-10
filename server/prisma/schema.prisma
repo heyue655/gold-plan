@@ -63,6 +63,7 @@ model RepaymentPlan {
   name      String   @db.VarChar(100)
   amount    Decimal  @db.Decimal(10, 2)
   dueDay    Int      @map("due_day") @db.TinyInt
+  repayType String   @default("MONTHLY") @map("repay_type") @db.VarChar(10) // ONCE | MONTHLY
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -85,6 +86,7 @@ model MonthlyRepayment {
   dueDate   DateTime  @map("due_date") @db.Date
   isPaid    Boolean   @default(false) @map("is_paid")
   paidAt    DateTime? @map("paid_at")
+  isDeleted Boolean   @default(false) @map("is_deleted")
   createdAt DateTime  @default(now()) @map("created_at")
 
   plan RepaymentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)

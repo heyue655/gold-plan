@@ -24,7 +24,7 @@ async function aggregateUser(userId, months, startDate, endDate) {
       select: { type: true, amount: true, category: true, date: true },
     }),
     prisma.monthlyRepayment.findMany({
-      where: { userId, OR: months.map((m) => ({ year: m.year, month: m.month })) },
+      where: { userId, isDeleted: false, OR: months.map((m) => ({ year: m.year, month: m.month })) },
       select: { year: true, month: true, amount: true, isPaid: true },
     }),
   ]);

@@ -22,6 +22,7 @@ function serializeRepayment(r) {
     created_at: r.createdAt,
     plan_name: r.plan?.name,
     due_day: r.plan?.dueDay,
+    repay_type: r.plan?.repayType,
   };
 }
 
@@ -37,6 +38,7 @@ function getDueDateObj(year, month, dueDay) {
 
 /**
  * 为指定用户的指定年月批量生成还款实例（已有的自动跳过）
+ * ONCE 类型计划只在创建当月生成一条记录
  */
 async function generateMonthlyRepayments(userId, year, month) {
   const plans = await prisma.repaymentPlan.findMany({
@@ -44,7 +46,18 @@ async function generateMonthlyRepayments(userId, year, month) {
   });
   if (plans.length === 0) return;
 
-  const data = plans.map((p) => ({
+  // 过滤：MONTHLY 计划始终生成；ONCE 计划仅在创建当月生成
+  const eligible = plans.filter((p) => {
+    if (p.repayType === 'ONCE') {
+      const created = new Date(p.createdAt);
+      return created.getFullYear() === year && created.getMonth() + 1 === month;
+    }
+    return true; // MONTHLY
+  });
+
+  if (eligible.length === 0) return;
+
+  const data = eligible.map((p) => ({
     planId: p.id,
     userId,
     year,
@@ -74,9 +87,9 @@ router.get('/', auth, async (req, res) => {
       const allIds = [req.user.id, ...familyIds];
       await generateMonthlyRepayments(req.user.id, year, month);
       const rows = await prisma.monthlyRepayment.findMany({
-        where: { userId: { in: allIds }, year, month },
+        where: { userId: { in: allIds }, year, month, isDeleted: false, plan: { isActive: true } },
         include: {
-          plan: { select: { name: true, dueDay: true } },
+          plan: { select: { name: true, dueDay: true, repayType: true } },
           user: { select: { id: true, username: true } },
         },
         orderBy: { dueDate: 'asc' },
@@ -91,8 +104,8 @@ router.get('/', auth, async (req, res) => {
         return res.status(403).json({ message: '无权查看该用户的数据' });
       }
       const rows = await prisma.monthlyRepayment.findMany({
-        where: { userId: queryUserId, year, month },
-        include: { plan: { select: { name: true, dueDay: true } } },
+        where: { userId: queryUserId, year, month, isDeleted: false, plan: { isActive: true } },
+        include: { plan: { select: { name: true, dueDay: true, repayType: true } } },
         orderBy: { dueDate: 'asc' },
       });
       return res.json(rows.map(serializeRepayment));
@@ -102,8 +115,8 @@ router.get('/', auth, async (req, res) => {
     await generateMonthlyRepayments(req.user.id, year, month);
 
     const rows = await prisma.monthlyRepayment.findMany({
-      where: { userId: req.user.id, year, month },
-      include: { plan: { select: { name: true, dueDay: true } } },
+      where: { userId: req.user.id, year, month, isDeleted: false, plan: { isActive: true } },
+      include: { plan: { select: { name: true, dueDay: true, repayType: true } } },
       orderBy: { dueDate: 'asc' },
     });
     return res.json(rows.map(serializeRepayment));
@@ -118,9 +131,17 @@ router.patch('/:id/toggle', auth, async (req, res) => {
   const repaymentId = parseInt(req.params.id, 10);
 
   try {
-    const current = await prisma.monthlyRepayment.findFirst({
+    // 先尝试查找自己的记录
+    let current = await prisma.monthlyRepayment.findFirst({
       where: { id: repaymentId, userId: req.user.id },
     });
+    // 如果不是自己的，检查是否是家庭成员的记录
+    if (!current) {
+      const familyIds = await getFamilyUserIds(req.user.id);
+      current = await prisma.monthlyRepayment.findFirst({
+        where: { id: repaymentId, userId: { in: familyIds } },
+      });
+    }
     if (!current) {
       return res.status(404).json({ message: '记录不存在' });
     }
@@ -129,7 +150,7 @@ router.patch('/:id/toggle', auth, async (req, res) => {
     const updated = await prisma.monthlyRepayment.update({
       where: { id: repaymentId },
       data: { isPaid: newPaid, paidAt: newPaid ? new Date() : null },
-      include: { plan: { select: { name: true, dueDay: true } } },
+      include: { plan: { select: { name: true, dueDay: true, repayType: true } } },
     });
     return res.json(serializeRepayment(updated));
   } catch (err) {
@@ -158,9 +179,32 @@ router.patch('/:id/amount', auth, async (req, res) => {
     const updated = await prisma.monthlyRepayment.update({
       where: { id: repaymentId },
       data: { amount: parseFloat(amount) },
-      include: { plan: { select: { name: true, dueDay: true } } },
+      include: { plan: { select: { name: true, dueDay: true, repayType: true } } },
     });
     return res.json(serializeRepayment(updated));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// 删除本月还款记录（软删除）
+router.delete('/:id', auth, async (req, res) => {
+  const repaymentId = parseInt(req.params.id, 10);
+
+  try {
+    const existing = await prisma.monthlyRepayment.findFirst({
+      where: { id: repaymentId, userId: req.user.id },
+    });
+    if (!existing) {
+      return res.status(404).json({ message: '记录不存在' });
+    }
+
+    await prisma.monthlyRepayment.update({
+      where: { id: repaymentId },
+      data: { isDeleted: true },
+    });
+    return res.json({ message: '已删除' });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: '服务器错误' });

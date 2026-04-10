@@ -39,7 +39,7 @@ router.get('/', auth, async (req, res) => {
           _sum: { amount: true },
         }),
         prisma.monthlyRepayment.aggregate({
-          where: { userId: { in: familyIds }, isPaid: true },
+          where: { userId: { in: familyIds }, isPaid: true, isDeleted: false },
           _sum: { amount: true },
         }),
       ]);

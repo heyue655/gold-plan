@@ -174,7 +174,7 @@ router.post('/sso-bind', async (req, res) => {
 
     const localUser = await prisma.user.findUnique({ where: { email } });
     if (!localUser) {
-      return res.status(404).json({ message: '未找到该邮箱对应的账号，请先在记账工具注册' });
+      return res.status(404).json({ message: '未找到该邮箱对应的账号，请先在留金计划注册' });
     }
 
     const valid = await bcrypt.compare(password, localUser.passwordHash);

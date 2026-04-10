@@ -12,10 +12,14 @@ import {
   Slider,
   Typography,
   Box,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  FormLabel,
 } from '@mui/material'
 import api from '../api/axios'
 
-const defaultForm = { name: '', amount: '', due_day: 1 }
+const defaultForm = { name: '', amount: '', due_day: 1, repay_type: 'MONTHLY' }
 
 export default function AddPlanDialog({ open, onClose, onSuccess }) {
   const [form, setForm] = useState(defaultForm)
@@ -51,6 +55,7 @@ export default function AddPlanDialog({ open, onClose, onSuccess }) {
         name: form.name.trim(),
         amount: parseFloat(form.amount),
         due_day: form.due_day,
+        repay_type: form.repay_type,
       })
       setForm(defaultForm)
       setError('')
@@ -101,8 +106,22 @@ export default function AddPlanDialog({ open, onClose, onSuccess }) {
           />
 
           <Box sx={{ mt: 2, mb: 1 }}>
+            <FormLabel component="legend" sx={{ fontSize: '0.875rem', color: 'text.secondary', mb: 0.5 }}>
+              还款类型
+            </FormLabel>
+            <RadioGroup
+              row
+              value={form.repay_type}
+              onChange={(e) => setForm((prev) => ({ ...prev, repay_type: e.target.value }))}
+            >
+              <FormControlLabel value="MONTHLY" control={<Radio size="small" />} label="每月" disabled={loading} />
+              <FormControlLabel value="ONCE" control={<Radio size="small" />} label="单次" disabled={loading} />
+            </RadioGroup>
+          </Box>
+
+          <Box sx={{ mt: 2, mb: 1 }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              每月还款日
+              还款日
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Slider

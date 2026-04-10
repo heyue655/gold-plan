@@ -27,12 +27,12 @@ import { formatAmount } from '../utils/format'
  */
 function getDaysUntilDue(dueDateStr, today) {
   const due = new Date(dueDateStr)
-  const now = new Date(today.year, today.month - 1, today.day)
-  const diff = Math.ceil((due - now) / (1000 * 60 * 60 * 24))
+  const now = new Date(Date.UTC(today.year, today.month - 1, today.day))
+  const diff = Math.round((due - now) / (1000 * 60 * 60 * 24))
   return diff
 }
 
-export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDelete, readOnly, ownerName }) {
+export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDelete, readOnly, toggleOnly, ownerName }) {
   const [anchorEl, setAnchorEl] = useState(null)
   const menuOpen = Boolean(anchorEl)
 
@@ -96,10 +96,10 @@ export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDe
           : 'grey.200',
         backgroundColor: isPaid ? 'grey.50' : '#fff',
         transition: 'all 0.2s',
-        cursor: readOnly ? 'default' : 'pointer',
-        '&:active': { transform: readOnly ? 'none' : 'scale(0.99)' },
+        cursor: (readOnly && !toggleOnly) ? 'default' : 'pointer',
+        '&:active': { transform: (readOnly && !toggleOnly) ? 'none' : 'scale(0.99)' },
       }}
-      onClick={() => !readOnly && onToggle(repayment)}
+      onClick={() => !(readOnly && !toggleOnly) && onToggle && onToggle(repayment)}
     >
       <CardContent
         sx={{
@@ -113,13 +113,13 @@ export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDe
       >
         <Checkbox
           checked={isPaid}
-          onChange={() => !readOnly && onToggle(repayment)}
+          onChange={() => !(readOnly && !toggleOnly) && onToggle && onToggle(repayment)}
           onClick={(e) => e.stopPropagation()}
           icon={<RadioButtonUnchecked />}
           checkedIcon={<CheckCircle />}
           color="success"
           sx={{ p: 0 }}
-          disabled={readOnly}
+          disabled={readOnly && !toggleOnly}
           inputProps={{ 'aria-label': `${repayment.plan_name} 已还款` }}
         />
 
@@ -169,8 +169,8 @@ export default function RepaymentCard({ repayment, today, onToggle, onEdit, onDe
           ¥{formatAmount(repayment.amount)}
         </Typography>
 
-        {/* 操作菜单 — 只读模式下隐藏 */}
-        {!readOnly && (
+        {/* 操作菜单 — 只读模式下隐藏（toggleOnly 不显示编辑/删除） */}
+        {!readOnly && onEdit && onDelete && (
           <>
             <IconButton
               size="small"

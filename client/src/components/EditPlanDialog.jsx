@@ -12,11 +12,15 @@ import {
   Slider,
   Typography,
   Box,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  FormLabel,
 } from '@mui/material'
 import api from '../api/axios'
 
 export default function EditPlanDialog({ open, plan, onClose, onSuccess }) {
-  const [form, setForm] = useState({ name: '', amount: '', due_day: 1 })
+  const [form, setForm] = useState({ name: '', amount: '', due_day: 1, repay_type: 'MONTHLY' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -24,9 +28,10 @@ export default function EditPlanDialog({ open, plan, onClose, onSuccess }) {
   useEffect(() => {
     if (plan) {
       setForm({
-        name: plan.name || '',
+        name: plan.plan_name || '',
         amount: String(plan.amount || ''),
         due_day: plan.due_day || 1,
+        repay_type: plan.repay_type || 'MONTHLY',
       })
       setError('')
     }
@@ -60,6 +65,7 @@ export default function EditPlanDialog({ open, plan, onClose, onSuccess }) {
         name: form.name.trim(),
         amount: parseFloat(form.amount),
         due_day: form.due_day,
+        repay_type: form.repay_type,
       })
       setError('')
       onSuccess()
@@ -108,8 +114,22 @@ export default function EditPlanDialog({ open, plan, onClose, onSuccess }) {
           />
 
           <Box sx={{ mt: 2, mb: 1 }}>
+            <FormLabel component="legend" sx={{ fontSize: '0.875rem', color: 'text.secondary', mb: 0.5 }}>
+              还款类型
+            </FormLabel>
+            <RadioGroup
+              row
+              value={form.repay_type}
+              onChange={(e) => setForm((prev) => ({ ...prev, repay_type: e.target.value }))}
+            >
+              <FormControlLabel value="MONTHLY" control={<Radio size="small" />} label="每月" disabled={loading} />
+              <FormControlLabel value="ONCE" control={<Radio size="small" />} label="单次" disabled={loading} />
+            </RadioGroup>
+          </Box>
+
+          <Box sx={{ mt: 2, mb: 1 }}>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              每月还款日
+              还款日
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Slider

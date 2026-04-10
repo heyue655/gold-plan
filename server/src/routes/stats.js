@@ -1,10 +1,21 @@
 const express = require('express');
 const prisma = require('../db/prisma');
 const auth = require('../middleware/auth');
+const { getFamilyUserIds } = require('./family');
 
 const router = express.Router();
 
 const toNum = (v) => parseFloat((v || 0).toString());
+
+// Resolve target user IDs based on scope
+async function resolveStatUserIds(requesterId, scope) {
+  if (!scope || scope === 'mine') return [requesterId];
+  if (scope === 'all') return getFamilyUserIds(requesterId);
+  const targetId = parseInt(scope, 10);
+  if (isNaN(targetId)) return [requesterId];
+  const familyIds = await getFamilyUserIds(requesterId);
+  return familyIds.includes(targetId) ? [targetId] : [requesterId];
+}
 
 // 获取统计数据
 router.get('/', auth, async (req, res) => {
@@ -12,6 +23,9 @@ router.get('/', auth, async (req, res) => {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
+    const scope = req.query.scope || 'mine';
+    const userIds = await resolveStatUserIds(req.user.id, scope);
+    const userFilter = userIds.length === 1 ? { userId: userIds[0] } : { userId: { in: userIds } };
 
     // 并行查询：累计 + 本月已还 + 本月未还 + 本月总数 + 本月已还数 + 历史分组
     const [
@@ -26,23 +40,23 @@ router.get('/', auth, async (req, res) => {
       ledgerExpenseAgg,
     ] = await Promise.all([
       prisma.monthlyRepayment.aggregate({
-        where: { userId: req.user.id, isPaid: true },
+        where: { ...userFilter, isPaid: true, isDeleted: false },
         _sum: { amount: true },
       }),
       prisma.monthlyRepayment.aggregate({
-        where: { userId: req.user.id, year, month, isPaid: true },
+        where: { ...userFilter, year, month, isPaid: true, isDeleted: false },
         _sum: { amount: true },
       }),
       prisma.monthlyRepayment.aggregate({
-        where: { userId: req.user.id, year, month, isPaid: false },
+        where: { ...userFilter, year, month, isPaid: false, isDeleted: false },
         _sum: { amount: true },
       }),
-      prisma.monthlyRepayment.count({ where: { userId: req.user.id, year, month } }),
-      prisma.monthlyRepayment.count({ where: { userId: req.user.id, year, month, isPaid: true } }),
+      prisma.monthlyRepayment.count({ where: { ...userFilter, year, month, isDeleted: false } }),
+      prisma.monthlyRepayment.count({ where: { ...userFilter, year, month, isPaid: true, isDeleted: false } }),
       // 近12个月总金额分组
       prisma.monthlyRepayment.groupBy({
         by: ['year', 'month'],
-        where: { userId: req.user.id },
+        where: { ...userFilter, isDeleted: false },
         orderBy: [{ year: 'desc' }, { month: 'desc' }],
         take: 12,
         _sum: { amount: true },
@@ -50,17 +64,17 @@ router.get('/', auth, async (req, res) => {
       // 近12个月已还金额分组
       prisma.monthlyRepayment.groupBy({
         by: ['year', 'month'],
-        where: { userId: req.user.id, isPaid: true },
+        where: { ...userFilter, isPaid: true, isDeleted: false },
         orderBy: [{ year: 'desc' }, { month: 'desc' }],
         take: 12,
         _sum: { amount: true },
       }),
       prisma.ledgerEntry.aggregate({
-        where: { userId: req.user.id, type: 'INCOME' },
+        where: { ...userFilter, type: 'INCOME' },
         _sum: { amount: true },
       }),
       prisma.ledgerEntry.aggregate({
-        where: { userId: req.user.id, type: 'EXPENSE' },
+        where: { ...userFilter, type: 'EXPENSE' },
         _sum: { amount: true },
       }),
     ]);

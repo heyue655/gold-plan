@@ -18,7 +18,7 @@ export default function SsoBind() {
   if (!ssoInfo?.sso_user_id) {
     return (
       <div style={{ textAlign: 'center', padding: '60px 20px', color: '#999' }}>
-        <p>参数错误，请从合跃盒子重新进入</p>
+        <p>参数错误，请从万象阁重新进入</p>
         <a href="/login">去登录</a>
       </div>
     )
@@ -85,7 +85,7 @@ export default function SsoBind() {
     <div style={{ maxWidth: 360, margin: '60px auto', padding: '0 20px' }}>
       <h2 style={{ textAlign: 'center', marginBottom: 8 }}>绑定本地账号</h2>
       <p style={{ textAlign: 'center', color: '#666', fontSize: 14, marginBottom: 24 }}>
-        首次从合跃盒子进入，您可以绑定已有账号或直接登录
+        首次从万象阁进入，您可以绑定已有账号或直接登录
       </p>
 
       {/* 快速登录按钮 */}

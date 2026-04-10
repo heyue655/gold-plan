@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import {
   Box,
   AppBar,
@@ -10,6 +10,7 @@ import {
   Alert,
   Divider,
   LinearProgress,
+  Chip,
 } from '@mui/material'
 import {
   CheckCircle,
@@ -35,21 +36,36 @@ export default function FinancePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [dashData, setDashData] = useState(null)
+  const [familyMembers, setFamilyMembers] = useState([])
+  const [scope, setScope] = useState('mine')
 
   useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const { data } = await api.get('/stats')
-        setStats(data)
-      } catch (err) {
-        setError(err.response?.data?.message || '加载失败')
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchAll()
-    api.get('/dashboard').then(({ data }) => setDashData(data)).catch(() => {})
+    api.get('/family').then(({ data }) => {
+      setFamilyMembers(data.members)
+      if (data.members.length > 0) setScope('all')
+    }).catch(() => {})
   }, [])
+
+  const fetchData = useCallback(async (sc) => {
+    setLoading(true)
+    setError('')
+    try {
+      const [statsRes, dashRes] = await Promise.all([
+        api.get('/stats', { params: { scope: sc } }),
+        api.get('/dashboard', { params: { scope: sc } }),
+      ])
+      setStats(statsRes.data)
+      setDashData(dashRes.data)
+    } catch (err) {
+      setError(err.response?.data?.message || '加载失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData(scope)
+  }, [scope, fetchData])
 
   return (
     <Box>
@@ -59,6 +75,41 @@ export default function FinancePage() {
             账房
           </Typography>
         </Toolbar>
+
+        {/* 成员选择器 */}
+        {familyMembers.length > 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 0.75,
+              px: 2,
+              pb: 1.25,
+              overflowX: 'auto',
+              '&::-webkit-scrollbar': { display: 'none' },
+            }}
+          >
+            {[
+              { key: 'all', label: '全部' },
+              { key: 'mine', label: '只看我的' },
+              ...familyMembers.map((m) => ({ key: String(m.id), label: m.username + '的' })),
+            ].map((tab) => (
+              <Chip
+                key={tab.key}
+                label={tab.label}
+                size="small"
+                onClick={() => setScope(tab.key)}
+                sx={{
+                  flexShrink: 0,
+                  bgcolor: scope === tab.key ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.2)',
+                  color: scope === tab.key ? 'primary.main' : '#fff',
+                  fontWeight: scope === tab.key ? 700 : 400,
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.7)' },
+                  border: 'none',
+                }}
+              />
+            ))}
+          </Box>
+        )}
       </AppBar>
 
       <Box sx={{ px: 2, py: 2 }}>
@@ -138,12 +189,13 @@ export default function FinancePage() {
                     近6个月收支趋势
                   </Typography>
                   <Divider sx={{ mb: 2 }} />
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={220}>
                     <BarChart
                       data={dashData.trend.slice(-6).map((t) => ({
                         label: `${parseInt(t.label.split('/')[1], 10)}月`,
                         income: t.income,
-                        total_expense: t.total_expense,
+                        paid_expense: t.paid_expense,
+                        unpaid: t.repayment_unpaid,
                       }))}
                       margin={{ top: 5, right: 5, left: -15, bottom: 0 }}
                       barCategoryGap="30%"
@@ -159,16 +211,17 @@ export default function FinancePage() {
                       <Tooltip
                         formatter={(v, name) => [
                           `¥${formatAmount(v)}`,
-                          name === 'income' ? '收入' : '支出(含还款)',
+                          name === 'income' ? '收入' : name === 'paid_expense' ? '已确认支出' : '待还款',
                         ]}
                       />
                       <Legend
-                        formatter={(v) => (v === 'income' ? '收入' : '支出(含还款)')}
+                        formatter={(v) => v === 'income' ? '收入' : v === 'paid_expense' ? '已确认支出' : '待还款'}
                         iconType="circle"
                         iconSize={8}
                       />
                       <Bar dataKey="income" fill="#66bb6a" radius={[3, 3, 0, 0]} maxBarSize={28} />
-                      <Bar dataKey="total_expense" fill="#ef5350" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                      <Bar dataKey="paid_expense" stackId="expense" fill="#ef5350" maxBarSize={28} />
+                      <Bar dataKey="unpaid" stackId="expense" fill="#ef535066" radius={[3, 3, 0, 0]} maxBarSize={28} />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -184,20 +237,40 @@ export default function FinancePage() {
                   </Typography>
                   <Divider sx={{ mb: 1.5 }} />
                   {dashData.current.expense_categories.map((cat) => {
-                    const pct =
-                      dashData.current.total_expense > 0
-                        ? Math.min((cat.amount / dashData.current.total_expense) * 100, 100)
-                        : 0
-                    const isRepayment = cat.category === '还款'
+                    const totalExp = dashData.current.total_expense;
+                    const pct = totalExp > 0 ? Math.min((cat.amount / totalExp) * 100, 100) : 0;
+                    const isRepayment = cat.category === '还款';
+
+                    if (isRepayment && cat.paid !== undefined) {
+                      const paidPct = totalExp > 0 ? Math.min((cat.paid / totalExp) * 100, 100) : 0;
+                      return (
+                        <Box key={cat.category} sx={{ mb: 1.5 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.4 }}>
+                            <Typography variant="body2" fontWeight={500}>还款</Typography>
+                            <Typography variant="body2" fontWeight={700} sx={{ color: 'secondary.main' }}>
+                              ¥{formatAmount(cat.amount)}　{pct.toFixed(1)}%
+                              {cat.unpaid > 0 && (
+                                <Typography component="span" variant="caption" sx={{ color: 'text.disabled', ml: 0.5 }}>
+                                  (待还 ¥{formatAmount(cat.unpaid)})
+                                </Typography>
+                              )}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ position: 'relative', height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: '#ede7f6' }}>
+                            {/* 淡色底层：总还款占比 */}
+                            <Box sx={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${pct}%`, backgroundColor: '#7e57c244', borderRadius: 3 }} />
+                            {/* 深色前层：已还占比 */}
+                            <Box sx={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${paidPct}%`, backgroundColor: '#7e57c2', borderRadius: 3 }} />
+                          </Box>
+                        </Box>
+                      );
+                    }
+
                     return (
                       <Box key={cat.category} sx={{ mb: 1.5 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.4 }}>
                           <Typography variant="body2" fontWeight={500}>{cat.category}</Typography>
-                          <Typography
-                            variant="body2"
-                            fontWeight={700}
-                            sx={{ color: isRepayment ? 'secondary.main' : 'error.main' }}
-                          >
+                          <Typography variant="body2" fontWeight={700} color="error.main">
                             ¥{formatAmount(cat.amount)}　{pct.toFixed(1)}%
                           </Typography>
                         </Box>
@@ -207,15 +280,12 @@ export default function FinancePage() {
                           sx={{
                             height: 5,
                             borderRadius: 3,
-                            backgroundColor: isRepayment ? '#ede7f6' : '#ffebee',
-                            '& .MuiLinearProgress-bar': {
-                              backgroundColor: isRepayment ? '#7e57c2' : '#ef5350',
-                              borderRadius: 3,
-                            },
+                            backgroundColor: '#ffebee',
+                            '& .MuiLinearProgress-bar': { backgroundColor: '#ef5350', borderRadius: 3 },
                           }}
                         />
                       </Box>
-                    )
+                    );
                   })}
                 </CardContent>
               </Card>

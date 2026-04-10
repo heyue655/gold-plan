@@ -57,6 +57,7 @@ router.get('/', auth, async (req, res) => {
       prisma.monthlyRepayment.findMany({
         where: {
           userId: { in: userIds },
+          isDeleted: false,
           OR: months.map((m) => ({ year: m.year, month: m.month })),
         },
         select: { year: true, month: true, amount: true, isPaid: true },
@@ -68,7 +69,7 @@ router.get('/', auth, async (req, res) => {
     months.forEach((m) => {
       trendMap[`${m.year}-${m.month}`] = {
         year: m.year, month: m.month,
-        income: 0, ledger_expense: 0, repayment: 0,
+        income: 0, ledger_expense: 0, repayment_paid: 0, repayment_unpaid: 0,
       };
     });
 
@@ -83,19 +84,26 @@ router.get('/', auth, async (req, res) => {
 
     repayments.forEach((r) => {
       const key = `${r.year}-${r.month}`;
-      if (trendMap[key]) trendMap[key].repayment += parseFloat(r.amount.toString());
+      if (!trendMap[key]) return;
+      const amt = parseFloat(r.amount.toString());
+      if (r.isPaid) trendMap[key].repayment_paid += amt;
+      else trendMap[key].repayment_unpaid += amt;
     });
 
     const trend = months.map((m) => {
       const d = trendMap[`${m.year}-${m.month}`];
-      const total_expense = d.ledger_expense + d.repayment;
+      const paid_expense = d.ledger_expense + d.repayment_paid;
+      const total_expense = paid_expense + d.repayment_unpaid;
       return {
         label: `${m.year}/${String(m.month).padStart(2, '0')}`,
         income: +d.income.toFixed(2),
         ledger_expense: +d.ledger_expense.toFixed(2),
-        repayment: +d.repayment.toFixed(2),
+        repayment_paid: +d.repayment_paid.toFixed(2),
+        repayment_unpaid: +d.repayment_unpaid.toFixed(2),
+        repayment: +(d.repayment_paid + d.repayment_unpaid).toFixed(2),
+        paid_expense: +paid_expense.toFixed(2),
         total_expense: +total_expense.toFixed(2),
-        balance: +(d.income - total_expense).toFixed(2),
+        balance: +(d.income - paid_expense).toFixed(2),
       };
     });
 
@@ -113,11 +121,16 @@ router.get('/', auth, async (req, res) => {
       const amt = parseFloat(e.amount.toString());
       expenseCatMap[e.category] = (expenseCatMap[e.category] || 0) + amt;
     });
-    const repaymentTotal = currentRepayments.reduce(
-      (sum, r) => sum + parseFloat(r.amount.toString()), 0
-    );
-    if (repaymentTotal > 0) {
-      expenseCatMap['还款'] = (expenseCatMap['还款'] || 0) + repaymentTotal;
+    let repaymentPaidTotal = 0;
+    let repaymentUnpaidTotal = 0;
+    currentRepayments.forEach((r) => {
+      const amt = parseFloat(r.amount.toString());
+      if (r.isPaid) repaymentPaidTotal += amt;
+      else repaymentUnpaidTotal += amt;
+    });
+    const repaymentAllTotal = repaymentPaidTotal + repaymentUnpaidTotal;
+    if (repaymentAllTotal > 0) {
+      expenseCatMap['还款'] = (expenseCatMap['还款'] || 0) + repaymentAllTotal;
     }
 
     const incomeCatMap = {};
@@ -127,14 +140,22 @@ router.get('/', auth, async (req, res) => {
     });
 
     const expense_categories = Object.entries(expenseCatMap)
-      .map(([category, amount]) => ({ category, amount: +amount.toFixed(2) }))
+      .map(([category, amount]) => {
+        const entry = { category, amount: +amount.toFixed(2) };
+        if (category === '还款') {
+          entry.paid = +repaymentPaidTotal.toFixed(2);
+          entry.unpaid = +repaymentUnpaidTotal.toFixed(2);
+        }
+        return entry;
+      })
       .sort((a, b) => b.amount - a.amount);
 
     const income_categories = Object.entries(incomeCatMap)
       .map(([category, amount]) => ({ category, amount: +amount.toFixed(2) }))
       .sort((a, b) => b.amount - a.amount);
 
-    const total_expense = +(cur.ledger_expense + cur.repayment).toFixed(2);
+    const total_expense = +(cur.ledger_expense + cur.repayment_paid + cur.repayment_unpaid).toFixed(2);
+    const paid_expense = +(cur.ledger_expense + cur.repayment_paid).toFixed(2);
 
     return res.json({
       trend,
@@ -142,9 +163,12 @@ router.get('/', auth, async (req, res) => {
         year, month,
         income: +cur.income.toFixed(2),
         ledger_expense: +cur.ledger_expense.toFixed(2),
-        repayment: +cur.repayment.toFixed(2),
+        repayment_paid: +cur.repayment_paid.toFixed(2),
+        repayment_unpaid: +cur.repayment_unpaid.toFixed(2),
+        repayment: +(cur.repayment_paid + cur.repayment_unpaid).toFixed(2),
+        paid_expense,
         total_expense,
-        balance: +(cur.income - total_expense).toFixed(2),
+        balance: +(cur.income - paid_expense).toFixed(2),
         expense_categories,
         income_categories,
       },
