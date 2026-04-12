@@ -657,7 +657,7 @@ export default function FinancePage() {
                 variant="outlined"
                 sx={{ mr: 1 }}
               />
-              <Typography variant="subtitle1" fontWeight={700} sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" component="span" fontWeight={700} sx={{ flex: 1 }}>
                 {viewMode === 'year' ? `${selectedYear}年` : `${new Date().getFullYear()}年${new Date().getMonth() + 1}月`}
               </Typography>
               <IconButton size="small" onClick={() => setDetailCategory(null)}>

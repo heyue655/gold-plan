@@ -89,7 +89,7 @@ export default function GeneratePlanDialog({ open, onClose, onGenerated, default
           onChange={(e) => setSavingsTarget(e.target.value)}
           type="number"
           fullWidth
-          helperText="不填则自动取留金目标或按收入20%估算"
+          helperText="不填则按年度留金目标与计划周数自动分摊，无目标时取收入20%"
           InputProps={{
             startAdornment: <InputAdornment position="start">¥</InputAdornment>,
             inputProps: { min: 0 },

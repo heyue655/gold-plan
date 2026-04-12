@@ -77,6 +77,8 @@ async function collectFinancialData(userIds, monthsBack = 3) {
   const now = new Date();
   const startDate = new Date(Date.UTC(now.getFullYear(), now.getMonth() - monthsBack, 1));
   const endDate = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 1));
+  // 仅用已完成的月份做均值（排除当月不完整数据）
+  const avgEndDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
 
   const [entries, repayments, goals] = await Promise.all([
     prisma.ledgerEntry.findMany({
@@ -104,16 +106,17 @@ async function collectFinancialData(userIds, monthsBack = 3) {
       note: e.note || '',
     }));
 
-  // aggregate income
+  // aggregate income（仅已完成月份）
   let totalMonthlyIncome = 0;
-  const incomeEntries = entries.filter((e) => e.type === 'INCOME');
+  const incomeEntries = entries.filter((e) => e.type === 'INCOME' && new Date(e.date) < avgEndDate);
   for (const e of incomeEntries) totalMonthlyIncome += toNum(e.amount);
   const avgMonthlyIncome = +(totalMonthlyIncome / monthsBack).toFixed(2);
 
-  // aggregate expenses by category
+  // aggregate expenses by category（仅已完成月份）
   let totalExpense = 0;
   const catAgg = {};
-  for (const e of expenseEntries) {
+  const completedExpenses = expenseEntries.filter((e) => new Date(e.date) < avgEndDate);
+  for (const e of completedExpenses) {
     totalExpense += e.amount;
     if (!catAgg[e.category]) catAgg[e.category] = { total: 0, count: 0, notes: {} };
     catAgg[e.category].total += e.amount;
@@ -151,11 +154,11 @@ async function collectFinancialData(userIds, monthsBack = 3) {
       dueDate: r.dueDate.toISOString().split('T')[0],
     }));
 
-  // paid repayments in the analysis period → monthly average
+  // paid repayments in the analysis period → monthly average（仅已完成月份）
   const paidInPeriod = repayments.filter((r) => {
     if (!r.isPaid) return false;
     const d = new Date(r.dueDate);
-    return d >= startDate && d < endDate;
+    return d >= startDate && d < avgEndDate;
   });
   let totalPaidRepayment = 0;
   for (const r of paidInPeriod) totalPaidRepayment += toNum(r.amount);
@@ -258,11 +261,14 @@ router.post('/generate', auth, async (req, res) => {
     const income = monthlyIncome ? parseFloat(monthlyIncome) : data.avgMonthlyIncome;
     // Repayment: use average
     const repayment = data.avgMonthlyRepayment;
-    // Savings target
+    // Savings target：按计划周数占全年52周的比例分摊年度留金目标
     let savings = savingsTarget ? parseFloat(savingsTarget) : null;
     if (!savings) {
-      if (data.personalGoalAmount && data.personalGoalAmount > 0) savings = data.personalGoalAmount;
-      else savings = +(income * 0.2).toFixed(2);
+      if (data.personalGoalAmount && data.personalGoalAmount > 0) {
+        savings = +(data.personalGoalAmount * (weeks / 52) / (weeks / 4.33)).toFixed(2);
+      } else {
+        savings = +(income * 0.2).toFixed(2);
+      }
     }
 
     // Monthly budget = income - repayment - savings (what you CAN spend)
@@ -373,9 +379,6 @@ ${data.upcomingRepayments.length > 0
 7. non-essential 类别（游戏、零食饮料、聚餐等）大力削减
 8. 信用卡还款已单独扣除，不要包含在周预算中`;
 
-    // Send 202 immediately
-    res.status(202).json({ message: '正在生成预算计划，请稍候…' });
-
     // Background job
     (async () => {
       try {
@@ -439,11 +442,25 @@ ${data.upcomingRepayments.length > 0
 // ── GET /api/savings-plan/active ────────────────────────
 router.get('/active', auth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const currentUserId = req.user.id;
     const scope = req.query.scope || 'PERSONAL';
 
+    // 支持查看家庭成员的计划
+    let targetUserId = currentUserId;
+    if (req.query.userId) {
+      const memberId = parseInt(req.query.userId, 10);
+      if (memberId !== currentUserId) {
+        // 验证是否为家庭成员
+        const familyIds = await getFamilyUserIds(currentUserId);
+        if (!familyIds.includes(memberId)) {
+          return res.status(403).json({ message: '无权查看该用户的计划' });
+        }
+        targetUserId = memberId;
+      }
+    }
+
     const plan = await prisma.savingsPlan.findFirst({
-      where: { userId, scope, status: { in: ['ACTIVE', 'GENERATING'] } },
+      where: { userId: targetUserId, scope, status: { in: ['ACTIVE', 'GENERATING'] } },
       include: {
         weeks: {
           orderBy: { weekNumber: 'asc' },
@@ -465,7 +482,7 @@ router.get('/active', auth, async (req, res) => {
       });
     }
 
-    const familyIds = [userId];
+    const familyIds = [targetUserId];
 
     // Compute actual spending for each week
     const weeksWithActuals = await Promise.all(

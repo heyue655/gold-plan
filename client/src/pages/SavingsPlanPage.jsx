@@ -15,6 +15,11 @@ import {
   LinearProgress,
   IconButton,
   Collapse,
+  Tabs,
+  Tab,
+  Dialog,
+  DialogTitle,
+  DialogContent,
 } from '@mui/material'
 import {
   ArrowBack,
@@ -29,6 +34,7 @@ import {
   AccountBalanceWallet,
   Savings,
   CreditCard,
+  InfoOutlined,
 } from '@mui/icons-material'
 import {
   BarChart,
@@ -68,13 +74,27 @@ export default function SavingsPlanPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [expandedWeek, setExpandedWeek] = useState(null)
 
+  // 家庭成员 tabs
+  const [members, setMembers] = useState([])
+  const [activeTab, setActiveTab] = useState(0) // 0 = 我的
+  const [viewUserId, setViewUserId] = useState(null) // null = 自己
+
+  // 拉取家庭成员
+  useEffect(() => {
+    api.get('/family').then(({ data }) => {
+      setMembers(data.members || [])
+    }).catch(() => {})
+  }, [])
+
   // Poll until plan appears (max ~60s)
   const pollForPlan = useCallback(async (setFlag) => {
     const maxAttempts = 12
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise((r) => setTimeout(r, 5000))
       try {
-        const res = await api.get('/savings-plan/active', { params: { scope: 'PERSONAL' } })
+        const params = { scope: 'PERSONAL' }
+        if (viewUserId) params.userId = viewUserId
+        const res = await api.get('/savings-plan/active', { params })
         if (res.data.plan && res.data.plan.status !== 'GENERATING') {
           setPlan(res.data.plan)
           const current = res.data.plan.weeks.find((w) => w.status === 'IN_PROGRESS')
@@ -86,12 +106,14 @@ export default function SavingsPlanPage() {
     }
     setFlag(false)
     setError('生成超时，请稍后刷新重试')
-  }, [])
+  }, [viewUserId])
 
   const fetchPlan = useCallback(async () => {
     try {
       setError('')
-      const res = await api.get('/savings-plan/active', { params: { scope: 'PERSONAL' } })
+      const params = { scope: 'PERSONAL' }
+      if (viewUserId) params.userId = viewUserId
+      const res = await api.get('/savings-plan/active', { params })
       const p = res.data.plan
       if (p && p.status === 'GENERATING') {
         setPlan(null)
@@ -109,9 +131,14 @@ export default function SavingsPlanPage() {
     } finally {
       setLoading(false)
     }
-  }, [pollForPlan])
+  }, [pollForPlan, viewUserId])
 
-  useEffect(() => { fetchPlan() }, [fetchPlan])
+  useEffect(() => { setLoading(true); setPlan(null); setExpandedWeek(null); fetchPlan() }, [fetchPlan])
+
+  const handleTabChange = (_e, newVal) => {
+    setActiveTab(newVal)
+    setViewUserId(newVal === 0 ? null : members[newVal - 1]?.id)
+  }
 
   const handleGenerated = () => {
     setGenerating(true)
@@ -163,6 +190,69 @@ export default function SavingsPlanPage() {
       classification: c.classification,
     }))
 
+  const isOwnPlan = !viewUserId
+  const [formulaDialog, setFormulaDialog] = useState(null) // { title, lines }
+
+  const showFormula = (title, lines) => setFormulaDialog({ title, lines })
+
+  // 构建各指标公式
+  const formulas = plan ? {
+    income: {
+      title: '月收入',
+      lines: [
+        `来源：${plan.monthlyIncome === plan.avgMonthlyIncome ? '近3个月已完成月份平均收入' : '用户手动填写'}`,
+        `数值：¥${formatAmount(plan.monthlyIncome)}`,
+      ],
+    },
+    savings: {
+      title: '锁定留金',
+      lines: [
+        '公式：年度留金目标 × (计划周数 / 52) ÷ (计划周数 / 4.33)',
+        `= 按计划周数占全年比例分摊到月`,
+        `数值：¥${formatAmount(plan.savingsTarget)}/月`,
+        '无年度目标时默认取月收入的20%',
+      ],
+    },
+    repayment: {
+      title: '月还款',
+      lines: [
+        '来源：近3个月已完成月份的平均信用卡还款',
+        `数值：¥${formatAmount(plan.monthlyRepayment)}/月`,
+      ],
+    },
+    budget: {
+      title: '月可用预算',
+      lines: [
+        '公式：月收入 − 月还款 − 锁定留金',
+        `= ¥${formatAmount(plan.monthlyIncome)} − ¥${formatAmount(plan.monthlyRepayment)} − ¥${formatAmount(plan.savingsTarget)}`,
+        `= ¥${formatAmount(plan.monthlyBudget)}/月`,
+      ],
+    },
+    totalBudget: {
+      title: '总预算',
+      lines: [
+        '公式：各周预算之和（由 AI 按月可用预算分配）',
+        `= ¥${formatAmount(plan.totalBudget)}（${plan.weeks.length}周）`,
+        `参考：月可用预算 ¥${formatAmount(plan.monthlyBudget)} × ${plan.weeks.length}周 / 4.33`,
+      ],
+    },
+    spent: {
+      title: '已花费',
+      lines: [
+        '来源：已开始及已结束周的实际支出合计',
+        `数值：¥${formatAmount(plan.totalSpent)}`,
+      ],
+    },
+    remaining: {
+      title: '剩余可花',
+      lines: [
+        '公式：总预算 − 已花费',
+        `= ¥${formatAmount(plan.totalBudget)} − ¥${formatAmount(plan.totalSpent)}`,
+        `= ¥${formatAmount(plan.totalRemaining)}`,
+      ],
+    },
+  } : {}
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
@@ -191,6 +281,22 @@ export default function SavingsPlanPage() {
         </Toolbar>
       </AppBar>
 
+      {/* 家庭成员 Tabs */}
+      {members.length > 0 && (
+        <Tabs
+          value={activeTab}
+          onChange={handleTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{ px: 1, minHeight: 40, '& .MuiTab-root': { minHeight: 40, py: 0.5, fontSize: 13 } }}
+        >
+          <Tab label="我的计划" />
+          {members.map((m) => (
+            <Tab key={m.id} label={`${m.username}的计划`} />
+          ))}
+        </Tabs>
+      )}
+
       <Box sx={{ px: 2, pt: 1 }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -204,7 +310,7 @@ export default function SavingsPlanPage() {
         {!plan && (
           <Card sx={{ textAlign: 'center', py: 4 }}>
             <CardContent>
-              {generating ? (
+              {generating && isOwnPlan ? (
                 <>
                   <CircularProgress size={48} sx={{ color: 'warning.main', mb: 2 }} />
                   <Typography variant="h6" fontWeight={700} gutterBottom>
@@ -214,7 +320,7 @@ export default function SavingsPlanPage() {
                     正在识别非必要开支并生成逐周计划，预计需要 10-30 秒
                   </Typography>
                 </>
-              ) : (
+              ) : isOwnPlan ? (
                 <>
                   <AutoAwesome sx={{ fontSize: 48, color: 'warning.main', mb: 2 }} />
                   <Typography variant="h6" fontWeight={700} gutterBottom>
@@ -232,6 +338,12 @@ export default function SavingsPlanPage() {
                     生成计划
                   </Button>
                 </>
+              ) : (
+                <>
+                  <Typography variant="body1" color="text.secondary" sx={{ py: 2 }}>
+                    该成员暂未制定预算控制计划
+                  </Typography>
+                </>
               )}
             </CardContent>
           </Card>
@@ -245,14 +357,16 @@ export default function SavingsPlanPage() {
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                   <Typography variant="subtitle1" fontWeight={700}>预算概览</Typography>
-                  <Box>
-                    <Button size="small" onClick={() => setDialogOpen(true)} sx={{ mr: 0.5 }} disabled={generating}>
-                      重新生成
-                    </Button>
-                    <Button size="small" color="error" onClick={handleAbandon}>
-                      放弃
-                    </Button>
-                  </Box>
+                  {isOwnPlan && (
+                    <Box>
+                      <Button size="small" onClick={() => setDialogOpen(true)} sx={{ mr: 0.5 }} disabled={generating}>
+                        重新生成
+                      </Button>
+                      <Button size="small" color="error" onClick={handleAbandon}>
+                        放弃
+                      </Button>
+                    </Box>
+                  )}
                 </Box>
 
                 {/* Income breakdown row */}
@@ -261,6 +375,9 @@ export default function SavingsPlanPage() {
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.3 }}>
                       <AccountBalanceWallet sx={{ fontSize: 14, color: 'text.secondary', mr: 0.3 }} />
                       <Typography variant="caption" color="text.secondary">月收入</Typography>
+                      <IconButton size="small" sx={{ p: 0, ml: 0.3 }} onClick={() => showFormula(formulas.income.title, formulas.income.lines)}>
+                        <InfoOutlined sx={{ fontSize: 13, color: 'text.disabled' }} />
+                      </IconButton>
                     </Box>
                     <Typography variant="body2" fontWeight={700}>¥{formatAmount(plan.monthlyIncome)}</Typography>
                   </Box>
@@ -268,6 +385,9 @@ export default function SavingsPlanPage() {
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.3 }}>
                       <Savings sx={{ fontSize: 14, color: 'success.main', mr: 0.3 }} />
                       <Typography variant="caption" color="text.secondary">锁定留金</Typography>
+                      <IconButton size="small" sx={{ p: 0, ml: 0.3 }} onClick={() => showFormula(formulas.savings.title, formulas.savings.lines)}>
+                        <InfoOutlined sx={{ fontSize: 13, color: 'text.disabled' }} />
+                      </IconButton>
                     </Box>
                     <Typography variant="body2" fontWeight={700} color="success.main">¥{formatAmount(plan.savingsTarget)}</Typography>
                   </Box>
@@ -275,6 +395,9 @@ export default function SavingsPlanPage() {
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.3 }}>
                       <CreditCard sx={{ fontSize: 14, color: 'warning.main', mr: 0.3 }} />
                       <Typography variant="caption" color="text.secondary">月还款</Typography>
+                      <IconButton size="small" sx={{ p: 0, ml: 0.3 }} onClick={() => showFormula(formulas.repayment.title, formulas.repayment.lines)}>
+                        <InfoOutlined sx={{ fontSize: 13, color: 'text.disabled' }} />
+                      </IconButton>
                     </Box>
                     <Typography variant="body2" fontWeight={700} color="warning.main">¥{formatAmount(plan.monthlyRepayment)}</Typography>
                   </Box>
@@ -285,17 +408,32 @@ export default function SavingsPlanPage() {
                 {/* Budget consumption */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-around', mb: 1.5 }}>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">总预算</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">总预算</Typography>
+                      <IconButton size="small" sx={{ p: 0, ml: 0.3 }} onClick={() => showFormula(formulas.totalBudget.title, formulas.totalBudget.lines)}>
+                        <InfoOutlined sx={{ fontSize: 13, color: 'text.disabled' }} />
+                      </IconButton>
+                    </Box>
                     <Typography variant="h6" fontWeight={700}>¥{formatAmount(plan.totalBudget)}</Typography>
                   </Box>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">已花费</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">已花费</Typography>
+                      <IconButton size="small" sx={{ p: 0, ml: 0.3 }} onClick={() => showFormula(formulas.spent.title, formulas.spent.lines)}>
+                        <InfoOutlined sx={{ fontSize: 13, color: 'text.disabled' }} />
+                      </IconButton>
+                    </Box>
                     <Typography variant="h6" fontWeight={700} color={spentPercent > 90 ? 'error.main' : spentPercent > 70 ? 'warning.main' : 'text.primary'}>
                       ¥{formatAmount(plan.totalSpent)}
                     </Typography>
                   </Box>
                   <Box sx={{ textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">剩余可花</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">剩余可花</Typography>
+                      <IconButton size="small" sx={{ p: 0, ml: 0.3 }} onClick={() => showFormula(formulas.remaining.title, formulas.remaining.lines)}>
+                        <InfoOutlined sx={{ fontSize: 13, color: 'text.disabled' }} />
+                      </IconButton>
+                    </Box>
                     <Typography variant="h6" fontWeight={700} color={plan.totalRemaining > 0 ? 'success.main' : 'error.main'}>
                       ¥{formatAmount(plan.totalRemaining)}
                     </Typography>
@@ -321,11 +459,16 @@ export default function SavingsPlanPage() {
                   </Typography>
                 </Box>
 
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                  {plan.startDate} ~ {plan.endDate} · {plan.weeks.length}周 · 月预算 ¥{formatAmount(plan.monthlyBudget)}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {plan.startDate} ~ {plan.endDate} · {plan.weeks.length}周 · 月预算 ¥{formatAmount(plan.monthlyBudget)}
+                  </Typography>
+                  <IconButton size="small" sx={{ p: 0, ml: 0.3 }} onClick={() => showFormula(formulas.budget.title, formulas.budget.lines)}>
+                    <InfoOutlined sx={{ fontSize: 13, color: 'text.disabled' }} />
+                  </IconButton>
+                </Box>
 
-                {hasMissedWeeks && (
+                {hasMissedWeeks && isOwnPlan && (
                   <Button
                     variant="contained"
                     color="warning"
@@ -605,6 +748,20 @@ export default function SavingsPlanPage() {
         onClose={() => setDialogOpen(false)}
         onGenerated={handleGenerated}
       />
+
+      {/* 公式说明弹窗 */}
+      <Dialog open={!!formulaDialog} onClose={() => setFormulaDialog(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0.5, fontSize: 16 }}>
+          {formulaDialog?.title}
+        </DialogTitle>
+        <DialogContent>
+          {formulaDialog?.lines.map((line, i) => (
+            <Typography key={i} variant="body2" color="text.secondary" sx={{ lineHeight: 2, fontFamily: 'monospace', fontSize: 13 }}>
+              {line}
+            </Typography>
+          ))}
+        </DialogContent>
+      </Dialog>
     </Box>
   )
 }

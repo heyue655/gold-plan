@@ -98,7 +98,7 @@ export default function BindingDialog({ open, onClose, onMembersChange }) {
   }
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth disableRestoreFocus>
       <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
         <PersonAdd color="primary" />
         家庭绑定
