@@ -22,11 +22,17 @@ function serializeEntry(e) {
 // 获取某月记账记录
 router.get('/', auth, async (req, res) => {
   const year  = parseInt(req.query.year,  10) || new Date().getFullYear();
-  const month = parseInt(req.query.month, 10) || new Date().getMonth() + 1;
+  const month = req.query.month ? parseInt(req.query.month, 10) : null;
   const scope = req.query.scope || 'all';
+  const category = req.query.category || null;
+  const type = req.query.type || null;
 
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end   = new Date(Date.UTC(year, month, 1));
+  const start = month
+    ? new Date(Date.UTC(year, month - 1, 1))
+    : new Date(Date.UTC(year, 0, 1));
+  const end = month
+    ? new Date(Date.UTC(year, month, 1))
+    : new Date(Date.UTC(year + 1, 0, 1));
 
   try {
     let userIds;
@@ -48,8 +54,12 @@ router.get('/', auth, async (req, res) => {
       userIds = binding ? [targetId] : [req.user.id];
     }
 
+    const where = { userId: { in: userIds }, date: { gte: start, lt: end } };
+    if (category) where.category = category;
+    if (type && ['INCOME', 'EXPENSE'].includes(type)) where.type = type;
+
     const entries = await prisma.ledgerEntry.findMany({
-      where: { userId: { in: userIds }, date: { gte: start, lt: end } },
+      where,
       include: { user: { select: { username: true } } },
       orderBy: [{ date: 'desc' }, { id: 'desc' }],
     });
@@ -105,6 +115,46 @@ router.delete('/:id', auth, async (req, res) => {
     }
     await prisma.ledgerEntry.delete({ where: { id: entryId } });
     return res.json({ message: '已删除' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// 修改记账记录
+router.put('/:id', auth, async (req, res) => {
+  const entryId = parseInt(req.params.id, 10);
+  const { type, amount, category, note, date } = req.body;
+
+  if (!type || !amount || !category || !date) {
+    return res.status(400).json({ message: '类型、金额、分类和日期为必填项' });
+  }
+  if (!['INCOME', 'EXPENSE'].includes(type)) {
+    return res.status(400).json({ message: '类型无效' });
+  }
+  if (parseFloat(amount) <= 0) {
+    return res.status(400).json({ message: '金额必须大于 0' });
+  }
+
+  try {
+    const existing = await prisma.ledgerEntry.findFirst({
+      where: { id: entryId, userId: req.user.id },
+    });
+    if (!existing) {
+      return res.status(404).json({ message: '记录不存在' });
+    }
+
+    const updated = await prisma.ledgerEntry.update({
+      where: { id: entryId },
+      data: {
+        type,
+        amount: parseFloat(amount),
+        category,
+        note: note || null,
+        date: new Date(date),
+      },
+    });
+    return res.json(serializeEntry(updated));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: '服务器错误' });

@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage'
 import MyPage from './pages/MyPage'
 import LedgerPage from './pages/LedgerPage'
 import FinancePage from './pages/FinancePage'
+import SavingsPlanPage from './pages/SavingsPlanPage'
 import Layout from './components/Layout'
 import SsoLogin from './pages/SsoLogin'
 import SsoBind from './pages/SsoBind'
@@ -70,6 +71,14 @@ export default function App() {
             <Layout>
               <FinancePage />
             </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/savings-plan"
+        element={
+          <PrivateRoute>
+            <SavingsPlanPage />
           </PrivateRoute>
         }
       />

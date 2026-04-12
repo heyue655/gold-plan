@@ -16,10 +16,15 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material'
-import { ChevronLeft, ChevronRight, Add, Delete } from '@mui/icons-material'
+import { ChevronLeft, ChevronRight, Add, Delete, UploadFile } from '@mui/icons-material'
 import api from '../api/axios'
 import AddLedgerDialog from '../components/AddLedgerDialog'
+import ImportBillDialog from '../components/ImportBillDialog'
 import { formatAmount } from '../utils/format'
 
 const MONTH_NAMES = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
@@ -44,6 +49,8 @@ export default function LedgerPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [menuAnchor, setMenuAnchor] = useState(null)
+  const [importSource, setImportSource] = useState(null)
 
   const fetchEntries = useCallback(async (year, month) => {
     setLoading(true)
@@ -119,9 +126,29 @@ export default function LedgerPage() {
           <IconButton color="inherit" onClick={handleNextMonth} aria-label="下个月" size="large">
             <ChevronRight />
           </IconButton>
-          <IconButton color="inherit" onClick={() => setAddOpen(true)} aria-label="记一笔">
+          <IconButton color="inherit" onClick={(e) => setMenuAnchor(e.currentTarget)} aria-label="记一笔">
             <Add />
           </IconButton>
+          <Menu
+            anchorEl={menuAnchor}
+            open={Boolean(menuAnchor)}
+            onClose={() => setMenuAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            <MenuItem onClick={() => { setMenuAnchor(null); setAddOpen(true) }}>
+              <ListItemIcon><Add fontSize="small" /></ListItemIcon>
+              <ListItemText>记一笔</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { setMenuAnchor(null); setImportSource('wechat') }}>
+              <ListItemIcon><UploadFile fontSize="small" /></ListItemIcon>
+              <ListItemText>导入微信账单</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={() => { setMenuAnchor(null); setImportSource('alipay') }}>
+              <ListItemIcon><UploadFile fontSize="small" /></ListItemIcon>
+              <ListItemText>导入支付宝账单</ListItemText>
+            </MenuItem>
+          </Menu>
         </Toolbar>
 
         {/* 月度汇总栏 */}
@@ -262,6 +289,13 @@ export default function LedgerPage() {
       <AddLedgerDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
+        onSuccess={() => fetchEntries(current.year, current.month)}
+      />
+
+      <ImportBillDialog
+        open={Boolean(importSource)}
+        source={importSource || 'wechat'}
+        onClose={() => setImportSource(null)}
         onSuccess={() => fetchEntries(current.year, current.month)}
       />
 

@@ -22,6 +22,7 @@ model User {
   sentBindings     FamilyBinding[] @relation("BindingRequester")
   receivedBindings FamilyBinding[] @relation("BindingReceiver")
   savingsGoals     SavingsGoal[]
+  savingsPlans     SavingsPlan[]
 
   @@map("users")
 }
@@ -102,6 +103,7 @@ model SavingsGoal {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
   scope     String   @db.VarChar(10)  // PERSONAL | FAMILY
+  year      Int      @db.SmallInt     // 目标年份
   amount    Decimal  @db.Decimal(12, 2)
   note      String?  @db.VarChar(200)
   createdAt DateTime @default(now()) @map("created_at")
@@ -109,9 +111,71 @@ model SavingsGoal {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, scope])
+  @@unique([userId, scope, year])
   @@index([userId])
   @@map("savings_goals")
+}
+
+// ────── 留金执行计划（预算控制模型） ──────
+model SavingsPlan {
+  id                   Int      @id @default(autoincrement())
+  userId               Int      @map("user_id")
+  familyKey            String?  @db.VarChar(200) @map("family_key")
+  scope                String   @db.VarChar(10)  // PERSONAL | FAMILY
+  startDate            DateTime @map("start_date") @db.Date
+  endDate              DateTime @map("end_date") @db.Date
+  monthlyIncome        Decimal  @db.Decimal(12, 2) @map("monthly_income")
+  monthlyRepayment     Decimal  @db.Decimal(12, 2) @map("monthly_repayment")
+  savingsTarget        Decimal  @db.Decimal(12, 2) @map("savings_target")   // 留金目标
+  monthlyBudget        Decimal  @db.Decimal(12, 2) @map("monthly_budget")   // = income - repayment - savings
+  aiSummary            String   @db.Text @map("ai_summary")
+  nonEssentialAnalysis String   @db.Text @map("non_essential_analysis") // JSON string
+  status               String   @default("ACTIVE") @db.VarChar(12) // GENERATING | ACTIVE | COMPLETED | ABANDONED
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weeks WeeklyTarget[]
+
+  @@index([userId, status])
+  @@map("savings_plans")
+}
+
+model WeeklyTarget {
+  id              Int       @id @default(autoincrement())
+  planId          Int       @map("plan_id")
+  weekNumber      Int       @map("week_number") @db.SmallInt
+  startDate       DateTime  @map("start_date") @db.Date
+  endDate         DateTime  @map("end_date") @db.Date
+  budgetAmount    Decimal   @db.Decimal(12, 2) @map("budget_amount")     // 本周可花预算
+  actualSpending  Decimal?  @db.Decimal(12, 2) @map("actual_spending")   // 实际花费（实时算）
+  status          String    @default("UPCOMING") @db.VarChar(12) // UPCOMING | IN_PROGRESS | UNDER_BUDGET | OVER_BUDGET
+  aiAdvice        String    @db.Text @map("ai_advice")
+  isAdjusted      Boolean   @default(false) @map("is_adjusted")
+  originalBudget  Decimal?  @db.Decimal(12, 2) @map("original_budget")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  plan       SavingsPlan         @relation(fields: [planId], references: [id], onDelete: Cascade)
+  reductions SpendingReduction[]
+
+  @@index([planId, weekNumber])
+  @@map("weekly_targets")
+}
+
+model SpendingReduction {
+  id             Int      @id @default(autoincrement())
+  weeklyTargetId Int      @map("weekly_target_id")
+  category       String   @db.VarChar(50)
+  description    String   @db.VarChar(500)
+  weeklyLimit    Decimal  @db.Decimal(10, 2) @map("weekly_limit")
+  actualSpent    Decimal? @db.Decimal(10, 2) @map("actual_spent")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  weeklyTarget WeeklyTarget @relation(fields: [weeklyTargetId], references: [id], onDelete: Cascade)
+
+  @@index([weeklyTargetId])
+  @@map("spending_reductions")
 }
 
 // AI 分析记录：familyKey 为家庭组 key（成员 id 排序后拼接），个人账号 familyKey = "u{userId}"

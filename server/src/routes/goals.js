@@ -11,16 +11,17 @@ const toNum = (v) => parseFloat((v || 0).toString());
 router.get('/', auth, async (req, res) => {
   try {
     const userId = req.user.id;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
     const familyIds = await getFamilyUserIds(userId);
     const hasFamilyMembers = familyIds.length > 1;
 
     const [personal, family] = await Promise.all([
       prisma.savingsGoal.findUnique({
-        where: { userId_scope: { userId, scope: 'PERSONAL' } },
+        where: { userId_scope_year: { userId, scope: 'PERSONAL', year } },
       }),
       hasFamilyMembers
         ? prisma.savingsGoal.findFirst({
-            where: { userId: { in: familyIds }, scope: 'FAMILY' },
+            where: { userId: { in: familyIds }, scope: 'FAMILY', year },
             orderBy: { updatedAt: 'desc' },
           })
         : Promise.resolve(null),
@@ -60,15 +61,16 @@ router.get('/', auth, async (req, res) => {
 // PUT /api/goals/personal
 router.put('/personal', auth, async (req, res) => {
   try {
-    const { amount, note } = req.body;
+    const { amount, note, year } = req.body;
     const num = parseFloat(amount);
+    const yr = parseInt(year) || new Date().getFullYear();
     if (!amount || isNaN(num) || num <= 0) {
       return res.status(400).json({ message: '请输入有效金额' });
     }
     const goal = await prisma.savingsGoal.upsert({
-      where: { userId_scope: { userId: req.user.id, scope: 'PERSONAL' } },
+      where: { userId_scope_year: { userId: req.user.id, scope: 'PERSONAL', year: yr } },
       update: { amount: num, note: note || null },
-      create: { userId: req.user.id, scope: 'PERSONAL', amount: num, note: note || null },
+      create: { userId: req.user.id, scope: 'PERSONAL', year: yr, amount: num, note: note || null },
     });
     res.json(goal);
   } catch (err) {
@@ -80,8 +82,9 @@ router.put('/personal', auth, async (req, res) => {
 // DELETE /api/goals/personal
 router.delete('/personal', auth, async (req, res) => {
   try {
+    const year = parseInt(req.query.year) || new Date().getFullYear();
     await prisma.savingsGoal.deleteMany({
-      where: { userId: req.user.id, scope: 'PERSONAL' },
+      where: { userId: req.user.id, scope: 'PERSONAL', year },
     });
     res.json({ ok: true });
   } catch (err) {
@@ -99,9 +102,9 @@ router.put('/family', auth, async (req, res) => {
       return res.status(400).json({ message: '请输入有效金额' });
     }
     const goal = await prisma.savingsGoal.upsert({
-      where: { userId_scope: { userId: req.user.id, scope: 'FAMILY' } },
+      where: { userId_scope_year: { userId: req.user.id, scope: 'FAMILY', year: new Date().getFullYear() } },
       update: { amount: num, note: note || null },
-      create: { userId: req.user.id, scope: 'FAMILY', amount: num, note: note || null },
+      create: { userId: req.user.id, scope: 'FAMILY', year: new Date().getFullYear(), amount: num, note: note || null },
     });
     res.json(goal);
   } catch (err) {
@@ -114,7 +117,7 @@ router.put('/family', auth, async (req, res) => {
 router.delete('/family', auth, async (req, res) => {
   try {
     await prisma.savingsGoal.deleteMany({
-      where: { userId: req.user.id, scope: 'FAMILY' },
+      where: { userId: req.user.id, scope: 'FAMILY', year: new Date().getFullYear() },
     });
     res.json({ ok: true });
   } catch (err) {

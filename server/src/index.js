@@ -12,6 +12,8 @@ const dashboardRouter = require('./routes/dashboard');
 const familyRouter = require('./routes/family');
 const goalsRouter = require('./routes/goals');
 const aiRouter = require('./routes/ai');
+const savingsPlanRouter = require('./routes/savingsPlan');
+const importRouter = require('./routes/import');
 
 const app = express();
 
@@ -34,6 +36,8 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/family', familyRouter);
 app.use('/api/goals', goalsRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/savings-plan', savingsPlanRouter);
+app.use('/api/import', importRouter);
 
 // 健康检查
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));

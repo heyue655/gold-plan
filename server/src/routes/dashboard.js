@@ -179,4 +179,123 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// ========== 年度收支分析 ==========
+router.get('/yearly', auth, async (req, res) => {
+  const year = parseInt(req.query.year, 10) || new Date().getFullYear();
+  const scope = req.query.scope || 'all';
+
+  const startDate = new Date(Date.UTC(year, 0, 1));
+  const endDate = new Date(Date.UTC(year + 1, 0, 1));
+
+  const months = [];
+  for (let m = 1; m <= 12; m++) months.push({ year, month: m });
+
+  try {
+    const userIds = await resolveUserIds(req.user.id, scope);
+
+    const [ledgerEntries, repayments] = await Promise.all([
+      prisma.ledgerEntry.findMany({
+        where: { userId: { in: userIds }, date: { gte: startDate, lt: endDate } },
+        select: { type: true, amount: true, category: true, date: true },
+      }),
+      prisma.monthlyRepayment.findMany({
+        where: {
+          userId: { in: userIds },
+          isDeleted: false,
+          year,
+        },
+        select: { month: true, amount: true, isPaid: true },
+      }),
+    ]);
+
+    // 按月初始化
+    const trendMap = {};
+    months.forEach((m) => {
+      trendMap[m.month] = { income: 0, ledger_expense: 0, repayment_paid: 0, repayment_unpaid: 0 };
+    });
+
+    let yearIncome = 0, yearLedgerExp = 0, yearRepPaid = 0, yearRepUnpaid = 0;
+    const expenseCatMap = {};
+    const incomeCatMap = {};
+
+    ledgerEntries.forEach((e) => {
+      const d = new Date(e.date);
+      const m = d.getUTCMonth() + 1;
+      const amt = parseFloat(e.amount.toString());
+      if (e.type === 'INCOME') {
+        trendMap[m].income += amt;
+        yearIncome += amt;
+        incomeCatMap[e.category] = (incomeCatMap[e.category] || 0) + amt;
+      } else {
+        trendMap[m].ledger_expense += amt;
+        yearLedgerExp += amt;
+        expenseCatMap[e.category] = (expenseCatMap[e.category] || 0) + amt;
+      }
+    });
+
+    repayments.forEach((r) => {
+      const amt = parseFloat(r.amount.toString());
+      if (r.isPaid) {
+        trendMap[r.month].repayment_paid += amt;
+        yearRepPaid += amt;
+      } else {
+        trendMap[r.month].repayment_unpaid += amt;
+        yearRepUnpaid += amt;
+      }
+    });
+
+    // 还款归入支出分类
+    const repAll = yearRepPaid + yearRepUnpaid;
+    if (repAll > 0) {
+      expenseCatMap['还款'] = (expenseCatMap['还款'] || 0) + repAll;
+    }
+
+    const trend = months.map((m) => {
+      const d = trendMap[m.month];
+      const paid_expense = d.ledger_expense + d.repayment_paid;
+      return {
+        label: `${m.month}月`,
+        income: +d.income.toFixed(2),
+        paid_expense: +paid_expense.toFixed(2),
+        unpaid: +d.repayment_unpaid.toFixed(2),
+      };
+    });
+
+    const totalPaidExpense = +(yearLedgerExp + yearRepPaid).toFixed(2);
+    const totalExpense = +(yearLedgerExp + yearRepPaid + yearRepUnpaid).toFixed(2);
+
+    const expense_categories = Object.entries(expenseCatMap)
+      .map(([category, amount]) => {
+        const entry = { category, amount: +amount.toFixed(2) };
+        if (category === '还款') {
+          entry.paid = +yearRepPaid.toFixed(2);
+          entry.unpaid = +yearRepUnpaid.toFixed(2);
+        }
+        return entry;
+      })
+      .sort((a, b) => b.amount - a.amount);
+
+    const income_categories = Object.entries(incomeCatMap)
+      .map(([category, amount]) => ({ category, amount: +amount.toFixed(2) }))
+      .sort((a, b) => b.amount - a.amount);
+
+    return res.json({
+      year,
+      trend,
+      summary: {
+        income: +yearIncome.toFixed(2),
+        paid_expense: totalPaidExpense,
+        total_expense: totalExpense,
+        repayment_unpaid: +yearRepUnpaid.toFixed(2),
+        balance: +(yearIncome - totalPaidExpense).toFixed(2),
+      },
+      expense_categories,
+      income_categories,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: '服务器错误' });
+  }
+});
+
 module.exports = router;

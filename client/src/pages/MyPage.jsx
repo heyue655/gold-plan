@@ -103,7 +103,8 @@ export default function MyPage() {
   }, [])
 
   const fetchGoals = useCallback(() => {
-    api.get('/goals').then(({ data }) => setGoals(data)).catch(() => {})
+    const year = new Date().getFullYear()
+    api.get('/goals', { params: { year } }).then(({ data }) => setGoals(data)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -135,7 +136,7 @@ export default function MyPage() {
           setGoalSaving(false)
           return
         }
-        await api.put('/goals/personal', { amount: personalAmount, note: personalNote })
+        await api.put('/goals/personal', { amount: personalAmount, note: personalNote, year: new Date().getFullYear() })
       } else {
         if (!familyAmount || isNaN(parseFloat(familyAmount)) || parseFloat(familyAmount) <= 0) {
           setGoalError('请输入有效的目标金额')
@@ -155,7 +156,7 @@ export default function MyPage() {
 
   const deleteGoal = async (scope) => {
     try {
-      await api.delete(`/goals/${scope}`)
+      await api.delete(`/goals/${scope}`, { params: { year: new Date().getFullYear() } })
       fetchGoals()
     } catch {
       // ignore
@@ -324,7 +325,7 @@ export default function MyPage() {
                   <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                       <Savings sx={{ color: liujin >= 0 ? 'primary.main' : 'error.main', fontSize: 18 }} />
-                      <Typography variant="caption" fontWeight={600} color="text.secondary">
+                      <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>
                         个人留金
                       </Typography>
                     </Box>
@@ -360,7 +361,7 @@ export default function MyPage() {
                       <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                           <Savings sx={{ color: fl !== null && fl >= 0 ? 'secondary.main' : 'error.main', fontSize: 18 }} />
-                          <Typography variant="caption" fontWeight={600} color="text.secondary">
+                          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>
                             家庭留金
                           </Typography>
                         </Box>
@@ -393,7 +394,7 @@ export default function MyPage() {
                 <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                     <Savings sx={{ color: liujin >= 0 ? 'primary.main' : 'error.main', fontSize: 22 }} />
-                    <Typography variant="body2" fontWeight={600} color="text.secondary">
+                    <Typography variant="body2" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>
                       累计留金（收入−支出−还款）
                     </Typography>
                   </Box>
@@ -409,13 +410,22 @@ export default function MyPage() {
               </Card>
             )}
 
-            {/* 留金目标 */}
+            {/* 本年目标 */}
             <Card sx={{ mb: 2 }}>
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                   <Typography variant="subtitle1" fontWeight={700} sx={{ flex: 1 }}>
-                    留金目标
+                    {new Date().getFullYear()}年目标
                   </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AutoAwesome sx={{ fontSize: 16 }} />}
+                    onClick={() => navigate('/savings-plan')}
+                    sx={{ mr: 1, textTransform: 'none', fontSize: 12 }}
+                  >
+                    预算计划
+                  </Button>
                   <IconButton size="small" onClick={openGoalDialog} aria-label="设置目标">
                     <Edit fontSize="small" />
                   </IconButton>
@@ -641,6 +651,7 @@ export default function MyPage() {
                 )}
               </CardContent>
             </Card>
+
           </>
         )}
       </Box>

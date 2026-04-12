@@ -19,7 +19,7 @@ import {
   Button,
   Fab,
 } from '@mui/material'
-import { ChevronLeft, ChevronRight, Add, Delete } from '@mui/icons-material'
+import { ChevronLeft, ChevronRight, Add, Delete, Edit } from '@mui/icons-material'
 import api from '../api/axios'
 import AddLedgerDialog from '../components/AddLedgerDialog'
 import { formatAmount } from '../utils/format'
@@ -69,6 +69,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [addOpen, setAddOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
 
@@ -332,6 +333,18 @@ export default function DashboardPage() {
                       </Typography>
                       <IconButton
                         size="small"
+                        onClick={() => setEditTarget(entry)}
+                        aria-label="编辑"
+                        sx={{
+                          flexShrink: 0,
+                          color: 'text.disabled',
+                          '&:hover': { color: 'primary.main' },
+                        }}
+                      >
+                        <Edit fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        size="small"
                         onClick={() => setDeleteTarget(entry)}
                         aria-label="删除"
                         sx={{
@@ -351,8 +364,9 @@ export default function DashboardPage() {
       </Box>
 
       <AddLedgerDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
+        open={addOpen || Boolean(editTarget)}
+        editEntry={editTarget}
+        onClose={() => { setAddOpen(false); setEditTarget(null) }}
         onSuccess={() => fetchAll(current.year, current.month, scope)}
       />
 

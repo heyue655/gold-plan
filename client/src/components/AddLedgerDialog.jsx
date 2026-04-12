@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogTitle,
@@ -15,12 +15,22 @@ import {
   Typography,
   Chip,
   Stack,
+  Divider,
 } from '@mui/material'
+import { UploadFile } from '@mui/icons-material'
 import api from '../api/axios'
+import ImportBillDialog from './ImportBillDialog'
 
 const CATEGORIES = {
-  EXPENSE: ['餐饮', '交通', '购物', '娱乐', '住房', '医疗', '通讯', '其他'],
-  INCOME: ['工资', '兼职', '副业', '理财', '红包', '其他'],
+  EXPENSE: [
+    '正餐', '外卖', '零食饮料', '聚餐',
+    '公共交通', '打车', '加油停车',
+    '日用品', '服饰美妆', '数码电子', '其他购物',
+    '游戏', '影视音乐', '旅游', '运动健身',
+    '住房', '水电燃气', '医疗', '通讯',
+    '转账', '红包', '亲属卡', '学费培训', '宠物', '其他',
+  ],
+  INCOME: ['工资', '兼职', '副业', '理财', '红包', '转账', '其他'],
 }
 
 function defaultForm(type = 'EXPENSE') {
@@ -33,10 +43,30 @@ function defaultForm(type = 'EXPENSE') {
   }
 }
 
-export default function AddLedgerDialog({ open, onClose, onSuccess }) {
+export default function AddLedgerDialog({ open, onClose, onSuccess, editEntry }) {
+  const isEdit = Boolean(editEntry)
   const [form, setForm] = useState(defaultForm())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [importSource, setImportSource] = useState(null)
+
+  // 编辑模式：打开时填充表单
+  useEffect(() => {
+    if (!open) return
+    if (editEntry) {
+      const cat = CATEGORIES[editEntry.type]?.includes(editEntry.category) ? editEntry.category : CATEGORIES[editEntry.type]?.[0] || '其他'
+      setForm({
+        type: editEntry.type,
+        amount: String(editEntry.amount),
+        category: cat,
+        note: editEntry.note || '',
+        date: editEntry.date,
+      })
+    } else {
+      setForm(defaultForm())
+    }
+    setError('')
+  }, [open, editEntry])
 
   const handleTypeChange = (_, newType) => {
     if (!newType) return
@@ -64,19 +94,24 @@ export default function AddLedgerDialog({ open, onClose, onSuccess }) {
     }
     setLoading(true)
     try {
-      await api.post('/ledger', {
+      const payload = {
         type: form.type,
         amount: parseFloat(form.amount),
         category: form.category,
         note: form.note.trim() || null,
         date: form.date,
-      })
+      }
+      if (isEdit) {
+        await api.put(`/ledger/${editEntry.id}`, payload)
+      } else {
+        await api.post('/ledger', payload)
+      }
       setForm(defaultForm())
       setError('')
       onSuccess()
       onClose()
     } catch (err) {
-      setError(err.response?.data?.message || '记录失败，请稍后重试')
+      setError(err.response?.data?.message || (isEdit ? '修改失败' : '记录失败，请稍后重试'))
     } finally {
       setLoading(false)
     }
@@ -85,8 +120,9 @@ export default function AddLedgerDialog({ open, onClose, onSuccess }) {
   const isExpense = form.type === 'EXPENSE'
 
   return (
+    <>
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="xs">
-      <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>记一笔</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>{isEdit ? '修改记录' : '记一笔'}</DialogTitle>
       <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -171,6 +207,37 @@ export default function AddLedgerDialog({ open, onClose, onSuccess }) {
             InputLabelProps={{ shrink: true }}
           />
         </Box>
+
+        {!isEdit && (
+          <>
+            <Divider sx={{ mt: 2, mb: 1 }} />
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.75, display: 'block' }}>
+              批量导入账单
+            </Typography>
+            <Stack direction="row" gap={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<UploadFile sx={{ fontSize: 16 }} />}
+                onClick={() => setImportSource('wechat')}
+                disabled={loading}
+                sx={{ textTransform: 'none', fontSize: 12 }}
+              >
+                导入微信账单
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<UploadFile sx={{ fontSize: 16 }} />}
+                onClick={() => setImportSource('alipay')}
+                disabled={loading}
+                sx={{ textTransform: 'none', fontSize: 12 }}
+              >
+                导入支付宝账单
+              </Button>
+            </Stack>
+          </>
+        )}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
         <Button onClick={handleClose} disabled={loading} color="inherit">
@@ -184,9 +251,17 @@ export default function AddLedgerDialog({ open, onClose, onSuccess }) {
           disabled={loading}
           sx={{ minWidth: 80 }}
         >
-          {loading ? <CircularProgress size={20} color="inherit" /> : '确认记录'}
+          {loading ? <CircularProgress size={20} color="inherit" /> : isEdit ? '保存修改' : '确认记录'}
         </Button>
       </DialogActions>
     </Dialog>
+
+    <ImportBillDialog
+      open={Boolean(importSource)}
+      source={importSource || 'wechat'}
+      onClose={() => setImportSource(null)}
+      onSuccess={onSuccess}
+    />
+    </>
   )
 }

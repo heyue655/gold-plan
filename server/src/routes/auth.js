@@ -147,13 +147,52 @@ router.get('/sso-callback', async (req, res) => {
       return res.redirect(`${CLIENT}/sso-login?token=${token}&user=${userJson}`);
     }
 
-    // 没找到本地用户 → 跳转到绑定页面，附带 SSO 用户信息
-    const ssoInfo = encodeURIComponent(JSON.stringify({
-      sso_user_id: ssoUser.sso_user_id,
-      nickname: ssoUser.nickname || ssoUser.username || '',
-      email: ssoUser.email || '',
-    }));
-    return res.redirect(`${CLIENT}/sso-bind?sso_info=${ssoInfo}`);
+    // 没找到本地用户 → 使用万象阁用户信息自动注册
+    const crypto = require('crypto');
+    const randomPwd = crypto.randomBytes(16).toString('hex');
+    const passwordHash = await bcrypt.hash(randomPwd, 12);
+
+    const ssoUsername = ssoUser.nickname || ssoUser.username;
+    if (!ssoUsername) {
+      return res.redirect(`${CLIENT}/login?error=${encodeURIComponent('万象阁用户缺少用户名，无法自动注册')}`);
+    }
+    const ssoEmail = ssoUser.email || `${ssoUsername}@heyue.sso`;
+
+    // 用户名冲突时追加数字后缀
+    let finalUsername = ssoUsername;
+    let suffix = 1;
+    while (await prisma.user.findFirst({ where: { username: finalUsername } })) {
+      finalUsername = `${ssoUsername}_${suffix++}`;
+    }
+    // 邮箱冲突时也做处理
+    let finalEmail = ssoEmail;
+    if (await prisma.user.findUnique({ where: { email: finalEmail } })) {
+      finalEmail = `${finalUsername}@heyue.sso`;
+    }
+
+    localUser = await prisma.user.create({
+      data: {
+        username: finalUsername,
+        email: finalEmail,
+        passwordHash,
+        ssoUserId: ssoUser.sso_user_id,
+      },
+    });
+
+    // 通知 SSO 中心绑定关系
+    fetch(`${SSO_URL}/sso/bind-notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_key: APP_KEY, app_secret: APP_SECRET, sso_user_id: ssoUser.sso_user_id, local_user_id: String(localUser.id) }),
+    }).catch(() => {});
+
+    const autoToken = jwt.sign(
+      { id: localUser.id, username: localUser.username, email: localUser.email },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
+    );
+    const autoUserJson = encodeURIComponent(JSON.stringify({ id: localUser.id, username: localUser.username, email: localUser.email }));
+    return res.redirect(`${CLIENT}/sso-login?token=${autoToken}&user=${autoUserJson}`);
   } catch (e) {
     console.error('SSO callback error:', e);
     return res.redirect(`${CLIENT}/login?error=${encodeURIComponent(e.message)}`);
